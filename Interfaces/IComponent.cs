@@ -1,7 +1,3 @@
-namespace Capsicum.Interfaces
-{
-    public interface IComponent
-    {
-        
-    }
+namespace Capsicum.Interfaces {
+    public interface IComponent {}
 }
