@@ -41,6 +41,10 @@
   <ItemGroup>
     <Compile Include="Entity.cs" />
     <Compile Include="Events\EntityReleased.cs" />
+    <Compile Include="Events\PoolChanged.cs" />
+    <Compile Include="Exceptions\EntityNotInPoolException.cs" />
+    <Compile Include="Exceptions\EntityStillSubscribedToException.cs" />
+    <Compile Include="Pool.cs" />
     <Compile Include="Events\ComponentReplaced.cs" />
     <Compile Include="Events\EntityChanged.cs" />
     <Compile Include="Exceptions\ComponentAlreadyRegisteredException.cs" />
