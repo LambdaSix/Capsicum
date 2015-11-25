@@ -32,6 +32,7 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Data.Entity" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -41,9 +42,14 @@
   <ItemGroup>
     <Compile Include="Entity.cs" />
     <Compile Include="Events\EntityReleased.cs" />
+    <Compile Include="Events\GroupChanged.cs" />
     <Compile Include="Events\PoolChanged.cs" />
     <Compile Include="Exceptions\EntityNotInPoolException.cs" />
     <Compile Include="Exceptions\EntityStillSubscribedToException.cs" />
+    <Compile Include="Exceptions\GroupAlreadyExistsException.cs" />
+    <Compile Include="Exceptions\GroupNotRegisteredException.cs" />
+    <Compile Include="Group.cs" />
+    <Compile Include="ObservableHashSet.cs" />
     <Compile Include="Pool.cs" />
     <Compile Include="Events\ComponentReplaced.cs" />
     <Compile Include="Events\EntityChanged.cs" />
