@@ -8,10 +8,12 @@ using Capsicum.Exceptions;
 using Capsicum.Interfaces;
 
 namespace Capsicum {
-    public class Entity : IDisposable {
-        public event EventHandler<EntityChanged> OnComponentAdded;
-        public event EventHandler<EntityChanged> OnComponentRemoved;
-        public event EventHandler<ComponentReplaced> OnComponentReplaced;
+    public partial class Entity : IDisposable {
+        public event EventHandler<EntityChanged> OnComponentAdded = delegate { };
+        public event EventHandler<EntityChanged> OnComponentRemoved = delegate { };
+        public event EventHandler<ComponentReplaced> OnComponentReplaced = delegate { };
+
+        public event EventHandler<EntityReleased> OnEntityReleased = delegate { };
 
         private readonly HashSet<IComponent> _components = new HashSet<IComponent>();
         private string _stringCache;
@@ -116,6 +118,17 @@ namespace Capsicum {
             return _components.Any(s => s.GetType() == typeof (T));
         }
 
+        internal void Destroy() {
+            RemoveAllComponents();
+
+            // Unhook all the subscribers by attaching a blank delegate.
+            OnComponentAdded = delegate { };
+            OnComponentRemoved = delegate { };
+            OnComponentReplaced = delegate { };
+
+            IsEnabled = false;
+        }
+
         public override string ToString() {
             if (_stringCache == null) {
                 var sb = new StringBuilder();
@@ -147,12 +160,17 @@ namespace Capsicum {
 
         public void Dispose() {
             Dispose(true);
+            GC.SuppressFinalize(this);
         }
 
         private void Dispose(bool dispose) {
             if (dispose) {
-                if (_disposed) {
+                if (!_disposed) {
+                    OnEntityReleased.Invoke(this, new EntityReleased(this));
                     RemoveAllComponents();
+
+                    // Unattach any subscribers with a blank delegate
+                    OnEntityReleased = delegate { };
                     _disposed = true;
                 }
             }

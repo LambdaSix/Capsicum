@@ -40,6 +40,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Entity.cs" />
+    <Compile Include="Events\EntityReleased.cs" />
     <Compile Include="Events\ComponentReplaced.cs" />
     <Compile Include="Events\EntityChanged.cs" />
     <Compile Include="Exceptions\ComponentAlreadyRegisteredException.cs" />
