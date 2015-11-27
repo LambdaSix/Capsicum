@@ -18,6 +18,12 @@ namespace Capsicum.Test {
             public void ThrowsWhenAttemptingToRetrieveUnregisteredComponent() {
                 Assert.Throws<ComponentNotRegisteredException>(() => e.GetComponent<FakeComponent>());
             }
+
+            [Test]
+            public void NoComponentsWhenNoComponentsRegistered()
+            {
+                Assert.That(!e.GetComponents().Any());
+            }
         }
     }
 }
