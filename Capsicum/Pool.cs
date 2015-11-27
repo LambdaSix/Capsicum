@@ -29,7 +29,7 @@ namespace Capsicum {
             // It *might* be worth keeping a list of entitys we can reuse in a graveyard.
             // but performance testing to see if that's worth it is needed.
 
-            var entity = new Entity() {
+            var entity = new Entity {
                 CreationIndex = _creationIndex,
                 IsEnabled = true
             };

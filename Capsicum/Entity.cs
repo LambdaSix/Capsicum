@@ -19,7 +19,12 @@ namespace Capsicum {
         private string _stringCache;
 
         public bool IsEnabled { get; internal set; }
-        public int CreationIndex { get; internal set; }
+        private int? _creationIndex;
+
+        internal int CreationIndex {
+            get { return _creationIndex.GetValueOrDefault(0); }
+            set { if (_creationIndex != null) _creationIndex = value; }
+        }
 
         /// <summary>
         /// Returns the <seealso cref="IComponent"/> of the requested type.
@@ -40,6 +45,8 @@ namespace Capsicum {
             return componentOut != null;
         }
 
+        public IEnumerable<IComponent> GetComponents() => _components;
+
         /// <summary>
         /// Add a <seealso cref="IComponent"/> instance to this entity.
         /// </summary>
@@ -50,7 +57,7 @@ namespace Capsicum {
         public Entity AddComponent<T>(T component) where T : class, IComponent {
             if (HasComponent<T>()) {
                 throw new ComponentAlreadyRegisteredException(this, component,
-                    String.Format("Component type '{0}' is already registered", typeof (T).Name));
+                    $"Component type '{typeof (T).Name}' is already registered");
             }
 
             _components.Add(component);
@@ -67,7 +74,7 @@ namespace Capsicum {
         public Entity RemoveComponent<T>() where T : class, IComponent {
             if (HasComponent<T>()) {
                 Debug.Assert(_components.SingleOrDefault(s => s.GetType() == typeof (T)) != null,
-                    String.Format("More than one component of type '{0}' registered to Entity", typeof (T).Name));
+                    $"More than one component of type '{typeof (T).Name}' registered to Entity");
 
                 // This is sorta weird but should work?
                 _components.RemoveWhere(s => {
@@ -80,7 +87,7 @@ namespace Capsicum {
             }
             else {
                 throw new ComponentNotRegisteredException(this,
-                    String.Format("Component type '{0}' ios not registered", typeof (T).Name));
+                    $"Component type '{typeof (T).Name}' ios not registered");
             }
 
             return this;
@@ -104,7 +111,7 @@ namespace Capsicum {
             }
             else {
                 throw new ComponentNotRegisteredException(this,
-                    String.Format("Component '{0}' is not registered", typeof (T).Name));
+                    $"Component '{typeof (T).Name}' is not registered");
             }
 
             return this;
@@ -149,6 +156,7 @@ namespace Capsicum {
         }
 
         public override int GetHashCode() {
+            // The creationIndex should stay the same for the lifetime of the object.
             return CreationIndex;
         }
 
