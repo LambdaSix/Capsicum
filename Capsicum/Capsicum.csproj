@@ -49,7 +49,6 @@
     <Compile Include="Exceptions\GroupAlreadyExistsException.cs" />
     <Compile Include="Exceptions\GroupNotRegisteredException.cs" />
     <Compile Include="Group.cs" />
-    <Compile Include="ObservableHashSet.cs" />
     <Compile Include="Pool.cs" />
     <Compile Include="Events\ComponentReplaced.cs" />
     <Compile Include="Events\EntityChanged.cs" />

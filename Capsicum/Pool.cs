@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using Capsicum.Events;
 using Capsicum.Exceptions;
 using Capsicum.Interfaces;
@@ -16,8 +17,7 @@ namespace Capsicum {
         // TODO: Entity Groups
         private IDictionary<string, Group> GroupQueries { get; set; }
 
-        // TODO: Check if this can just be an ObservableCollection, a lot of group operations search the entire list anyway
-        private readonly ObservableHashSet<Entity> _entities = new ObservableHashSet<Entity>();
+        private readonly ObservableCollection<Entity> _entities = new ObservableCollection<Entity>();
         private int _creationIndex;
 
         public Pool(int creationIndex = 0) {
@@ -72,7 +72,7 @@ namespace Capsicum {
 
         public virtual void RegisterGroup(string name, Func<IEnumerable<Entity>, IEnumerable<Entity>> query) {
             if (GroupQueries.ContainsKey(name)) {
-                throw new GroupAlreadyExistsException(String.Format("The group '{0}' is already registered", name));
+                throw new GroupAlreadyExistsException($"The group '{name}' is already registered");
             }
 
             GroupQueries.Add(name, new Group(_entities, query));
@@ -83,7 +83,7 @@ namespace Capsicum {
             if (GroupQueries.TryGetValue(name, out value))
                 return value;
 
-            throw new GroupNotRegisteredException(String.Format("The group '{0}' is not registered", name));
+            throw new GroupNotRegisteredException($"The group '{name}' is not registered");
         }
 
         public virtual bool TryGetGroup(string name, out Group groupOut) {
@@ -95,15 +95,11 @@ namespace Capsicum {
             if (GroupQueries.TryGetValue(name, out value))
                 return value.Invoke();
 
-            throw new GroupNotRegisteredException(String.Format("The group '{0}' is not registered", name));
+            throw new GroupNotRegisteredException($"The group '{name}' is not registered");
         }
 
         public virtual IEnumerable<Entity> GetAllEntities() {
             return _entities;
         }
-    }
-
-    public class FakeComponent : IComponent {
-        public string Name { get; set; }
     }
 }

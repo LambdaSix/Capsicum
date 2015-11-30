@@ -45,16 +45,19 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="EntityTests.cs" />
+    <Compile Include="GroupTests.cs" />
+    <Compile Include="Helper.cs" />
+    <Compile Include="PoolTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Capsicum\Capsicum.csproj">
       <Project>{15fc1429-8161-4a89-a1e1-5af4c8aa134a}</Project>
       <Name>Capsicum</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

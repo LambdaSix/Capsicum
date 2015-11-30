@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
@@ -55,13 +56,17 @@ namespace Capsicum {
         /// <param name="component">Component instance</param>
         /// <returns>This entity for further chaining</returns>
         public Entity AddComponent<T>(T component) where T : class, IComponent {
+            return AddComponent(component, notify: true);
+        }
+
+        internal Entity AddComponent<T>(T component, bool notify) where T : class, IComponent {
             if (HasComponent<T>()) {
                 throw new ComponentAlreadyRegisteredException(this, component,
                     $"Component type '{typeof (T).Name}' is already registered");
             }
 
             _components.Add(component);
-            OnComponentAdded.Invoke(this, new EntityChanged(this, component));
+            if (notify) OnComponentAdded.Invoke(this, new EntityChanged(this, component));
 
             return this;
         }
@@ -72,6 +77,10 @@ namespace Capsicum {
         /// <typeparam name="T">Component type to remove</typeparam>
         /// <returns>This entity for further chaining</returns>
         public Entity RemoveComponent<T>() where T : class, IComponent {
+            return RemoveComponent<T>(notify: true);
+        }
+
+        internal Entity RemoveComponent<T>(bool notify) where T : class, IComponent {
             if (HasComponent<T>()) {
                 Debug.Assert(_components.SingleOrDefault(s => s.GetType() == typeof (T)) != null,
                     $"More than one component of type '{typeof (T).Name}' registered to Entity");
@@ -79,7 +88,7 @@ namespace Capsicum {
                 // This is sorta weird but should work?
                 _components.RemoveWhere(s => {
                     if (s.GetType() == typeof (T)) {
-                        OnComponentRemoved.Invoke(this, new EntityChanged(this, s));
+                        if (notify) OnComponentRemoved.Invoke(this, new EntityChanged(this, s));
                         return true;
                     }
                     return false;
@@ -106,7 +115,7 @@ namespace Capsicum {
         public Entity ReplaceComponent<T>(T newComponentInstance) where T : class, IComponent {
             if (HasComponent<T>()) {
                 var oldComponent = GetComponent<T>();
-                RemoveComponent<T>().AddComponent(newComponentInstance);
+                RemoveComponent<T>(notify: false).AddComponent(newComponentInstance, notify: false);
                 OnComponentReplaced.Invoke(this, new ComponentReplaced(this, oldComponent, newComponentInstance));
             }
             else {

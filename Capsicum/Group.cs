@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Linq;
 using Capsicum.Events;
@@ -19,11 +20,11 @@ namespace Capsicum {
         /// <summary>
         /// The entities in the pool that created this instance.
         /// </summary>
-        private readonly ObservableHashSet<Entity> _entities;
+        private readonly ObservableCollection<Entity> _entities;
 
         public Group() {}
 
-        public Group(ObservableHashSet<Entity> collection, Func<IEnumerable<Entity>, IEnumerable<Entity>> query) {
+        public Group(ObservableCollection<Entity> collection, Func<IEnumerable<Entity>, IEnumerable<Entity>> query) {
             _entities = collection;
             QueryExpression = query;
 
