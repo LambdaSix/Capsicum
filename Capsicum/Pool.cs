@@ -17,27 +17,56 @@ namespace Capsicum {
         // TODO: Entity Groups
         private IDictionary<string, Group> GroupQueries { get; set; }
 
-        private readonly ObservableCollection<Entity> _entities = new ObservableCollection<Entity>();
+        private readonly ObservableCollection<Entity> _entities;
+        private readonly List<Entity> _graveyardEntities;
         private int _creationIndex;
 
-        public Pool(int creationIndex = 0) {
+        public Pool(int capacity = 2048, int creationIndex = 0) {
             _creationIndex = creationIndex;
             GroupQueries = new Dictionary<string, Group>();
+
+            _entities = new ObservableCollection<Entity>();
+            _graveyardEntities = new List<Entity>(capacity / 2);
         }
 
+        /// <summary>
+        /// Create a new entity in this pool
+        /// </summary>
+        /// <returns></returns>
         public virtual Entity CreateEntity() {
-            // It *might* be worth keeping a list of entitys we can reuse in a graveyard.
-            // but performance testing to see if that's worth it is needed.
+            Entity entity = null;
 
-            var entity = new Entity() {
-                CreationIndex = _creationIndex,
-                IsEnabled = true
-            };
+            for (int i = 0; i < _graveyardEntities.Count; i++)
+            {
+                if (!_graveyardEntities[i].IsEnabled)
+                {
+                    // Found a free entity, resurrect it for reuse.
+                    entity = _entities[i];
+                    entity.IsEnabled = true;
+                    entity.Pool = this;
 
+                    _graveyardEntities.Remove(entity);
+                }
+            }
+
+            // Didn't find an entity to recycle
+            if (entity == null)
+            {
+                entity = new Entity()
+                {
+                    CreationIndex = _creationIndex,
+                    IsEnabled = true,
+                    Pool = this
+                };
+                _creationIndex++;
+            }
+
+            // Add the entity back to the active entity list
             _entities.Add(entity);
             OnEntityCreated.Invoke(this, new PoolChanged(this, entity));
+            return entity;
+        }
 
-            _creationIndex++;
             return entity;
         }
 
@@ -55,9 +84,6 @@ namespace Capsicum {
 
             // Inform subscribers the entity has been removed
             OnEntityRemoved.Invoke(this, new PoolChanged(this, entity));
-
-            // Remove the item from memory
-            entity.Dispose();
         }
 
         public virtual void RemoveAllEntities() {
@@ -96,6 +122,12 @@ namespace Capsicum {
                 return value.Invoke();
 
             throw new GroupNotRegisteredException($"The group '{name}' is not registered");
+        }
+
+        public virtual void MoveToGraveyard(Entity entity)
+        {
+            _entities.Remove(entity);
+            _graveyardEntities.Add(entity);
         }
 
         public virtual IEnumerable<Entity> GetAllEntities() {
