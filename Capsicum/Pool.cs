@@ -67,6 +67,17 @@ namespace Capsicum {
             return entity;
         }
 
+        /// <summary>
+        /// Create a new entity in this pool with a prefilled list of components
+        /// </summary>
+        /// <param name="components"></param>
+        /// <returns></returns>
+        public virtual Entity CreateEntity(IEnumerable<IComponent> components) {
+            var entity = CreateEntity();
+            foreach (var component in components) {
+                entity.AddComponent(component, false);
+            }
+
             return entity;
         }
 
