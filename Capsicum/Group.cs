@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -9,7 +10,7 @@ namespace Capsicum {
     /// <summary>
     /// Provides a way to manage a group of entitys.
     /// </summary>
-    public class Group {
+    public class Group : IEnumerable<Entity> {
         public event EventHandler<GroupChanged> OnEntityAdded = delegate { };
         public event EventHandler<GroupChanged> OnEntityRemoved = delegate { };
         public event EventHandler<GroupChanged> OnEntityReplaced = delegate { }; 
@@ -69,11 +70,19 @@ namespace Capsicum {
         /// Retrieve the objects this group contains
         /// </summary>
         /// <returns></returns>
-        public IEnumerable<Entity> Invoke() => _groupCache ?? (_groupCache = QueryExpression.Invoke(_entities).ToList());
+        public IEnumerable<Entity> Invoke() {
+            return _groupCache ?? (_groupCache = QueryExpression.Invoke(_entities).ToList());
+        }
 
         /// <summary>
         /// Invalidate the internal cache for this group
         /// </summary>
         internal void InvalidateCache() => _groupCache = null;
+
+        /// <inheritdoc />
+        public IEnumerator<Entity> GetEnumerator() => Invoke().GetEnumerator();
+
+        /// <inheritdoc />
+        IEnumerator IEnumerable.GetEnumerator() => ((IEnumerable)Invoke()).GetEnumerator();
     }
 }

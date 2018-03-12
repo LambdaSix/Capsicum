@@ -9,7 +9,7 @@ using Capsicum.Exceptions;
 using Capsicum.Interfaces;
 
 namespace Capsicum {
-    public partial class Entity : IDisposable {
+    public partial class Entity {
         public event EventHandler<EntityChanged> OnComponentAdded = delegate { };
         public event EventHandler<EntityChanged> OnComponentRemoved = delegate { };
         public event EventHandler<ComponentReplaced> OnComponentReplaced = delegate { };
@@ -20,6 +20,7 @@ namespace Capsicum {
         private string _stringCache;
 
         public bool IsEnabled { get; internal set; }
+        public Pool Pool { get; internal set; }
         private int? _creationIndex;
 
         internal int CreationIndex {
@@ -32,16 +33,27 @@ namespace Capsicum {
         /// </summary>
         /// <typeparam name="T">Type of Component to look for</typeparam>
         /// <returns>The instance of Component stored if it was found</returns>
-        public IComponent GetComponent<T>() where T : class, IComponent {
+        public T GetComponent<T>() where T : class, IComponent {
             var component = _components.OfType<T>().SingleOrDefault();
             if (component == null) {
-                throw new ComponentNotRegisteredException(this, "Component of type '{0}' was not registered");
+                throw new ComponentNotRegisteredException(this, $"Component of type '{0}' was not registered");
             }
 
             return component;
         }
 
-        public bool TryGetComponent<T>(out IComponent componentOut) where T : class, IComponent {
+        /// <summary>
+        /// Try and get the specified component from this Entity.
+        /// </summary>
+        /// <typeparam name="T">Type of component to look for</typeparam>
+        /// <returns>The instance of the component if it was found, otherwise null</returns>
+        public T GetComponentOf<T>() where T : class, IComponent
+        {
+            var component = _components.OfType<T>().SingleOrDefault();
+            return component;
+        }
+
+        public bool TryGetComponent<T>(out T componentOut) where T : class, IComponent {
             componentOut = _components.OfType<T>().SingleOrDefault();
             return componentOut != null;
         }
@@ -66,7 +78,8 @@ namespace Capsicum {
             }
 
             _components.Add(component);
-            if (notify) OnComponentAdded.Invoke(this, new EntityChanged(this, component));
+            if (notify)
+                OnComponentAdded.Invoke(this, new EntityChanged(this, component));
 
             return this;
         }
@@ -102,10 +115,12 @@ namespace Capsicum {
             return this;
         }
 
-        public Entity RemoveAllComponents() {
+        public Entity RemoveAllComponents(bool notify = false) {
             // For logical consistancy call the event. But maybe it should be optional?
-            foreach (var component in _components) {
-                OnComponentRemoved(this, new EntityChanged(this, component));
+            if (notify) {
+                foreach (var component in _components) {
+                    OnComponentRemoved(this, new EntityChanged(this, component));
+                }
             }
 
             _components.Clear();
@@ -134,8 +149,14 @@ namespace Capsicum {
             return _components.Any(s => s.GetType() == typeof (T));
         }
 
-        internal void Destroy() {
-            RemoveAllComponents();
+        /// <summary>
+        /// Free this entity for reuse.
+        /// </summary>
+        public void Destroy(bool notify = false) {
+            OnEntityReleased.Invoke(this, new EntityReleased(this));
+            Pool?.MoveToGraveyard(this);
+
+            RemoveAllComponents(notify);
 
             // Unhook all the subscribers by attaching a blank delegate.
             OnComponentAdded = delegate { };
@@ -167,33 +188,6 @@ namespace Capsicum {
         public override int GetHashCode() {
             // The creationIndex should stay the same for the lifetime of the object.
             return CreationIndex;
-        }
-
-        private bool _disposed;
-
-        ~Entity() {
-            Dispose(false);
-        }
-
-        public void Dispose() {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool dispose) {
-            if (dispose) {
-                if (!_disposed) {
-                    OnEntityReleased.Invoke(this, new EntityReleased(this));
-                    RemoveAllComponents();
-
-                    // Unattach any subscribers with a blank delegate
-                    OnEntityReleased = delegate { };
-                    _disposed = true;
-                }
-            }
-            else {
-                // No-unmanaged resources to flush.
-            }
         }
     }
 }
