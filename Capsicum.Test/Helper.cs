@@ -9,4 +9,9 @@ namespace Capsicum.Test {
     {
         public string Name { get; set; }
     }
+
+    public class OtherComponent : IComponent {
+        public string Name { get; set; }
+        public string Data { get; set; }
+    }
 }

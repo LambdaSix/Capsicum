@@ -12,8 +12,9 @@ namespace Capsicum {
     public class Group {
         public event EventHandler<GroupChanged> OnEntityAdded = delegate { };
         public event EventHandler<GroupChanged> OnEntityRemoved = delegate { };
-        public event EventHandler<GroupChanged> OnEntityReplaced = delegate { }; 
+        public event EventHandler<GroupChanged> OnEntityChanged = delegate { };
 
+        public Pool Owner { get; }
         internal Func<IEnumerable<Entity>, IEnumerable<Entity>> QueryExpression{ get; set; }
 
         private List<Entity> _groupCache;
@@ -24,27 +25,28 @@ namespace Capsicum {
 
         public Group() {}
 
-        public Group(ObservableCollection<Entity> collection, Func<IEnumerable<Entity>, IEnumerable<Entity>> query) {
+        public Group(Pool owner, ObservableCollection<Entity> collection, Func<IEnumerable<Entity>, IEnumerable<Entity>> query) {
             _entities = collection;
+            Owner = owner;
             QueryExpression = query;
 
             // This is intended to invalidate the internal cache only if changes occur that we care about, that is we would
             // have included the item in our group if Invoke() was called for the first time.
-            _entities.CollectionChanged += (sender, args) => {
+            _entities.CollectionChanged += OnPoolChange();
+
+            Owner.OnEntityChanged += (sender, changed) => EntityChanged(new[] {changed.Entity});
+        }
+
+        private NotifyCollectionChangedEventHandler OnPoolChange() {
+            return (sender, args) => {
                 switch (args.Action) {
                     // We want to raise the appropriate event for the right collection change, but also always invalidate
                     // the cache for any change.
                     case NotifyCollectionChangedAction.Add:
-                        if (QueryExpression.Invoke(args.NewItems.Cast<Entity>()).Any()) {
-                            OnEntityAdded.Invoke(this, new GroupChanged(this, args.NewItems.Cast<Entity>()));
-                            InvalidateCache();
-                        }
+                        CollectionModified(args.NewItems.Cast<Entity>(), OnEntityAdded);
                         break;
                     case NotifyCollectionChangedAction.Remove:
-                        if (QueryExpression.Invoke(args.OldItems.Cast<Entity>()).Any()) {
-                            OnEntityRemoved.Invoke(this, new GroupChanged(this, args.OldItems.Cast<Entity>()));
-                            InvalidateCache();
-                        }
+                        CollectionModified(args.OldItems.Cast<Entity>(), OnEntityRemoved);
                         break;
                     // Move is special, we literally don't care if an item moved it's index around, it's still there.
                     case NotifyCollectionChangedAction.Move:
@@ -52,10 +54,7 @@ namespace Capsicum {
 
                     // Replace may have changed one of our items
                     case NotifyCollectionChangedAction.Replace:
-                        if (QueryExpression.Invoke(args.NewItems.Cast<Entity>()).Any()) {
-                            OnEntityReplaced.Invoke(this, new GroupChanged(this, args.NewItems.Cast<Entity>()));
-                            InvalidateCache();
-                        }
+                        EntityChanged(args.NewItems.Cast<Entity>());
                         break;
                     // Nothing is valid for a Reset, just invalidate and try again later.
                     case NotifyCollectionChangedAction.Reset:
@@ -63,6 +62,20 @@ namespace Capsicum {
                         break;
                 }
             };
+        }
+
+        private void CollectionModified(IEnumerable<Entity> entities, EventHandler<GroupChanged> handler) {
+            if (QueryExpression.Invoke(entities).Any()) {
+                handler.Invoke(this, new GroupChanged(this, entities));
+                InvalidateCache();
+            }
+        }
+
+        private void EntityChanged(IEnumerable<Entity> entities) {
+            if (QueryExpression.Invoke(entities).Any()) {
+                OnEntityChanged.Invoke(this, new GroupChanged(this, entities));
+                InvalidateCache();
+            }
         }
 
         /// <summary>
