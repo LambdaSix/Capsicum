@@ -4,4 +4,4 @@ Master: [![Build Status](https://travis-ci.org/LambdaSix/Capsicum.svg?branch=mas
 
 Develop: [![Build Status](https://travis-ci.org/LambdaSix/Capsicum.svg?branch=Develop)](https://travis-ci.org/LambdaSix/Capsicum)
 
-ECS framework
+Entity Component System framework 
