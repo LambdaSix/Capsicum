@@ -36,7 +36,7 @@ namespace Capsicum {
         public T GetComponent<T>() where T : class, IComponent {
             var component = _components.OfType<T>().SingleOrDefault();
             if (component == null) {
-                throw new ComponentNotRegisteredException(this, "Component of type '{0}' was not registered");
+                throw new ComponentNotRegisteredException(this, $"Component of type '{0}' was not registered");
             }
 
             return component;
@@ -78,7 +78,8 @@ namespace Capsicum {
             }
 
             _components.Add(component);
-            if (notify) OnComponentAdded.Invoke(this, new EntityChanged(this, component));
+            if (notify)
+                OnComponentAdded.Invoke(this, new EntityChanged(this, component));
 
             return this;
         }
@@ -114,10 +115,12 @@ namespace Capsicum {
             return this;
         }
 
-        public Entity RemoveAllComponents() {
+        public Entity RemoveAllComponents(bool notify = false) {
             // For logical consistancy call the event. But maybe it should be optional?
-            foreach (var component in _components) {
-                OnComponentRemoved(this, new EntityChanged(this, component));
+            if (notify) {
+                foreach (var component in _components) {
+                    OnComponentRemoved(this, new EntityChanged(this, component));
+                }
             }
 
             _components.Clear();
@@ -149,11 +152,11 @@ namespace Capsicum {
         /// <summary>
         /// Free this entity for reuse.
         /// </summary>
-        public void Destroy() {
+        public void Destroy(bool notify = false) {
             OnEntityReleased.Invoke(this, new EntityReleased(this));
             Pool?.MoveToGraveyard(this);
 
-            RemoveAllComponents();
+            RemoveAllComponents(notify);
 
             // Unhook all the subscribers by attaching a blank delegate.
             OnComponentAdded = delegate { };

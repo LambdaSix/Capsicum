@@ -22,77 +22,90 @@ namespace Capsicum.Serialization {
     }
 
     /*
+     *  Int32  - FileVersion
      *  Int32  - EntityCount
      * Entity Record:
-     *  Byte   - Entity Start         - 0xAA
+     *  Byte   - Entity Start         - 0xFA
      *  Int32  - Component count
      * -- This Component sub-record repeats
      * {
-     *  Byte   - Component Start      - 0xBB
+     *  Byte   - Component Start      - 0xF1
      *  String - Component Qualified Name
      *  Int32  - Component data length
      *  byte[] - Component data
-     *  Byte   - Component End        - 0xBF
+     *  Byte   - Component End        - 0xF2
      * }
-     *  Byte   - Entity End           - 0xAF
+     *  Byte   - Entity End           - 0xFB
      */
 
     public class EntityReader {
         public IEnumerable<Entity> ReadFrom(string inPath, Func<IEnumerable<IComponent>, Entity> entityCreator) {
             using (var reader = new BinaryReader(new FileStream(inPath, FileMode.Open))) {
-                var fileVersion = reader.ReadInt32();
+                foreach (var entity in ReadBuffer(entityCreator, reader)) yield return entity;
+            }
+        }
 
-                if (fileVersion != Constants.FileVersion) {
-                    throw new ArgumentOutOfRangeException(nameof(inPath), $"Expected file version {Constants.FileVersion} but found {fileVersion}");
-                }
+        public IEnumerable<Entity> ReadFrom(byte[] inBuffer, Func<IEnumerable<IComponent>, Entity> entityCreator) {
+            using (var reader = new BinaryReader(new MemoryStream(inBuffer))) {
+                foreach (var entity in ReadBuffer(entityCreator, reader)) yield return entity;
+            }
+        }
 
-                var entityCount = reader.ReadInt32();
+        private static IEnumerable<Entity> ReadBuffer(Func<IEnumerable<IComponent>, Entity> entityCreator, BinaryReader reader) {
+            var fileVersion = reader.ReadInt32();
 
-                for (int i = 0; i <= entityCount; i++) {
-                    var entityStart = reader.ReadByte();
-                    Debug.Assert(entityStart == Constants.EntityStart, "entityStart == Constants.EntityStart");
+            if (fileVersion != Constants.FileVersion) {
+                throw new ArgumentOutOfRangeException(nameof(reader),
+                    $"Expected file version {Constants.FileVersion} but found {fileVersion}");
+            }
 
-                    var componentCount = reader.ReadInt32();
-                    var entityComponents = new List<IComponent>(componentCount);
+            var entityCount = reader.ReadInt32();
 
-                    for (int j = 0; j <= componentCount; j++) {
-                        var componentStart = reader.ReadByte();
-                        Debug.Assert(componentStart == Constants.ComponentStart, "componentStart == Constants.ComponentStart");
+            for (int i = 0; i < entityCount; i++) {
+                var entityStart = reader.ReadByte();
+                Debug.Assert(entityStart == Constants.EntityStart, "entityStart == Constants.EntityStart");
 
-                        // Initialize a new component object based on the saved name.
-                        var componentTypeName = reader.ReadString();
-                        var type = Type.GetType(componentTypeName);
-                        if (type == null) {
-                            throw new TypeInitializationException(componentTypeName, null);
-                        }
-                        var instance = Activator.CreateInstance(type);
+                var componentCount = reader.ReadInt32();
+                var entityComponents = new List<IComponent>(componentCount);
 
-                        // Treat it as a SerializableComponent
-                        var component = instance as ISerializableComponent;
+                for (int j = 0; j < componentCount; j++) {
+                    var componentStart = reader.ReadByte();
+                    Debug.Assert(componentStart == Constants.ComponentStart, "componentStart == Constants.ComponentStart");
 
-                        // Grab the component data.
-                        var componentDataLength = reader.ReadInt32();
-                        var componentData = reader.ReadBytes(componentDataLength);
-
-                        // Ask the component to deserialize itself from provided data
-                        Debug.Assert(component != null, nameof(component) + " != null");
-                        component.Deserialize(componentData);
-
-                        // Push it into the list
-                        entityComponents.Add(component);
-
-                        // Check we've hit the end of the record
-                        var componentEnd = reader.ReadByte();
-                        Debug.Assert(componentEnd == Constants.ComponentEnd, "componentEnd == Constants.ComponentEnd");
+                    // Initialize a new component object based on the saved name.
+                    var componentTypeName = reader.ReadString();
+                    var type = Type.GetType(componentTypeName);
+                    if (type == null) {
+                        throw new TypeInitializationException(componentTypeName, null);
                     }
 
-                    // Check we've hit the end of the entity record
-                    var entityEnd = reader.ReadByte();
-                    Debug.Assert(entityEnd == Constants.EntityEnd, "entityEnd == Constants.EntityEnd");
+                    var instance = Activator.CreateInstance(type);
 
-                    // Politely ask the user to create a new Entity based on the supplied components.
-                    yield return entityCreator(entityComponents);
+                    // Treat it as a SerializableComponent
+                    var component = instance as ISerializableComponent;
+
+                    // Grab the component data.
+                    var componentDataLength = reader.ReadInt32();
+                    var componentData = reader.ReadBytes(componentDataLength);
+
+                    // Ask the component to deserialize itself from provided data
+                    Debug.Assert(component != null, nameof(component) + " != null");
+                    component.Deserialize(componentData);
+
+                    // Push it into the list
+                    entityComponents.Add(component);
+
+                    // Check we've hit the end of the record
+                    var componentEnd = reader.ReadByte();
+                    Debug.Assert(componentEnd == Constants.ComponentEnd, "componentEnd == Constants.ComponentEnd");
                 }
+
+                // Check we've hit the end of the entity record
+                var entityEnd = reader.ReadByte();
+                Debug.Assert(entityEnd == Constants.EntityEnd, "entityEnd == Constants.EntityEnd");
+
+                // Politely ask the user to create a new Entity based on the supplied components.
+                yield return entityCreator(entityComponents);
             }
         }
     }
@@ -127,8 +140,9 @@ namespace Capsicum.Serialization {
             }
 
             var ms = new MemoryStream();
-            ms.Write(toBytes(Constants.FileVersion), 0, 4);
-            ms.Write(toBytes(entities.Count()), 0, 4);
+            var bw = new BinaryWriter(ms);
+            bw.Write(Constants.FileVersion);
+            bw.Write(entities.Count());
 
             foreach (var entity in entities) {
                 var entityData = Serialize(entity);
