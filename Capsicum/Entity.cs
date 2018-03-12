@@ -24,8 +24,8 @@ namespace Capsicum {
         private int? _creationIndex;
 
         internal int CreationIndex {
-            get { return _creationIndex.GetValueOrDefault(0); }
-            set { if (_creationIndex != null) _creationIndex = value; }
+            get => _creationIndex.GetValueOrDefault(0);
+            set { if (_creationIndex == null) _creationIndex = value; }
         }
 
         /// <summary>

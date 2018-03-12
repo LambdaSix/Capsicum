@@ -10,6 +10,7 @@ namespace Capsicum {
     public partial class Pool : IEnumerable<Entity> {
 
         public event EventHandler<PoolChanged> OnEntityCreated = delegate { };
+        public event EventHandler<PoolChanged> OnEntityChanged = delegate { };
         public event EventHandler<PoolChanged> OnEntityRemoved = delegate { };
         public event EventHandler<PoolChanged> OnEntityRemoving = delegate { };
 
@@ -62,9 +63,14 @@ namespace Capsicum {
                 _creationIndex++;
             }
 
+            entity.OnComponentAdded += (sender, changed) => OnEntityChanged.Invoke(this, new PoolChanged(this, entity));
+            entity.OnComponentRemoved += (sender, changed) => OnEntityChanged.Invoke(this, new PoolChanged(this, entity));
+            entity.OnComponentReplaced += (sender, changed) => OnEntityChanged.Invoke(this, new PoolChanged(this, entity));
+
             // Add the entity back to the active entity list
             if (addToPool)
                 _entities.Add(entity);
+          
             OnEntityCreated.Invoke(this, new PoolChanged(this, entity));
             return entity;
         }
@@ -119,7 +125,7 @@ namespace Capsicum {
                 throw new GroupAlreadyExistsException($"The group '{name}' is already registered");
             }
 
-            GroupQueries.Add(name, new Group(_entities, query));
+            GroupQueries.Add(name, new Group(this, _entities, query));
         }
 
         public virtual Group GetGroup(string name) {
