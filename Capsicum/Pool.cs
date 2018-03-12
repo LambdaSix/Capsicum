@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Capsicum.Events;
@@ -6,7 +7,7 @@ using Capsicum.Exceptions;
 using Capsicum.Interfaces;
 
 namespace Capsicum {
-    public partial class Pool {
+    public partial class Pool : IEnumerable<Entity> {
 
         public event EventHandler<PoolChanged> OnEntityCreated = delegate { };
         public event EventHandler<PoolChanged> OnEntityChanged = delegate { };
@@ -34,7 +35,7 @@ namespace Capsicum {
         /// Create a new entity in this pool
         /// </summary>
         /// <returns></returns>
-        public virtual Entity CreateEntity() {
+        public virtual Entity CreateEntity(bool addToPool = true) {
             Entity entity = null;
 
             for (int i = 0; i < _graveyardEntities.Count; i++)
@@ -62,33 +63,48 @@ namespace Capsicum {
                 _creationIndex++;
             }
 
-            // Add the entity back to the active entity list
-            _entities.Add(entity);
-            if (addToPool)
-                _entities.Add(entity);
-
             entity.OnComponentAdded += (sender, changed) => OnEntityChanged.Invoke(this, new PoolChanged(this, entity));
             entity.OnComponentRemoved += (sender, changed) => OnEntityChanged.Invoke(this, new PoolChanged(this, entity));
             entity.OnComponentReplaced += (sender, changed) => OnEntityChanged.Invoke(this, new PoolChanged(this, entity));
 
+            // Add the entity back to the active entity list
+            if (addToPool)
+                _entities.Add(entity);
+          
             OnEntityCreated.Invoke(this, new PoolChanged(this, entity));
             return entity;
         }
 
+        /// <summary>
+        /// Create a new entity in this pool with a prefilled list of components
+        /// </summary>
+        /// <param name="components"></param>
+        /// <returns></returns>
+        public virtual Entity CreateEntity(IEnumerable<IComponent> components, bool addToPool = true) {
+            var entity = CreateEntity(false);
+            foreach (var component in components) {
+                entity.AddComponent(component, false);
+            }
+
+            if (addToPool) {
+                _entities.Add(entity);
+            }
+
             return entity;
         }
 
-        public virtual void RemoveEntity(Entity entity) {
+        public virtual void RemoveEntity(Entity entity, bool notifyComponents = false) {
+            // Inform subscribers the entity is going to be removed
+            OnEntityRemoving.Invoke(this, new PoolChanged(this, entity));
+
+            // This notifies groups as well
             var removed = _entities.Remove(entity);
 
             if (!removed)
                 throw new EntityNotInPoolException(entity, "Could not remove entity");
 
-            // Inform subscribers the entity is going to be removed
-            OnEntityRemoving.Invoke(this, new PoolChanged(this, entity));
-
             // Prepare it for removal
-            entity.Destroy();
+            entity.Destroy(notifyComponents);
 
             // Inform subscribers the entity has been removed
             OnEntityRemoved.Invoke(this, new PoolChanged(this, entity));
@@ -140,6 +156,16 @@ namespace Capsicum {
 
         public virtual IEnumerable<Entity> GetAllEntities() {
             return _entities;
+        }
+
+        /// <inheritdoc />
+        public IEnumerator<Entity> GetEnumerator() {
+            return _entities.GetEnumerator();
+        }
+
+        /// <inheritdoc />
+        IEnumerator IEnumerable.GetEnumerator() {
+            return ((IEnumerable) _entities).GetEnumerator();
         }
     }
 }

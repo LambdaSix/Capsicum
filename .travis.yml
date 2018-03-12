@@ -1,0 +1,16 @@
+language: csharp
+solution: Capsicum.sln
+install:
+  - nuget restore Capsicum.sln
+  - nuget install NUnit.Runners -OutputDirectory testrunner
+script:
+  - xbuild Capsicum.sln /p:TargetFrameworkVersion="v4.6" /p:Configuration=Release
+  - mono ./testrunner/NUnit.ConsoleRunner.*/tools/nunit3-console.exe ./Capsicum.Test/bin/Release/Capsicum.Test.dll
+  
+# Disabling package generation for now.
+#deploy:
+#  skip_cleanup: true
+#  provider: script
+#  script: chmod +x ./deploy/deploy.sh && ./deploy/deploy.sh $NUGET_API_KEY $NUGET_SOURCE
+#  on:
+#    branch: master
