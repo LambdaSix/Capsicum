@@ -93,6 +93,18 @@ namespace Capsicum {
             return entity;
         }
 
+        public virtual Entity CreateEntityFromAspect(IEntityAspect aspect, bool addToPool = true)
+        {
+            var entity = CreateEntity(false);
+            aspect.Setup(entity);
+
+            if (addToPool) {
+                _entities.Add(entity);
+            }
+
+            return entity;
+        }
+
         public virtual void RemoveEntity(Entity entity, bool notifyComponents = false) {
             // Inform subscribers the entity is going to be removed
             OnEntityRemoving.Invoke(this, new PoolChanged(this, entity));
