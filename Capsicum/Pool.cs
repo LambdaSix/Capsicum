@@ -93,7 +93,7 @@ namespace Capsicum {
             return entity;
         }
 
-        public virtual Entity CreateEntityFromAspect(IEntityAspect aspect, bool addToPool = true)
+        public virtual Entity CreateEntity(IEntityAspect aspect, bool addToPool = true)
         {
             var entity = CreateEntity(false);
             aspect.Setup(entity);
