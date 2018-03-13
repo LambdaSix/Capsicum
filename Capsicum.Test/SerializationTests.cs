@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Linq;
-using Capsicum.Serialization;
+using Capsicum.Serialization.Binary;
 using NUnit.Framework;
 
 namespace Capsicum.Test {
