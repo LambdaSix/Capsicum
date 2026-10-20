@@ -28,84 +28,85 @@ namespace Capsicum.Test {
 
         [TestFixture]
         public class Events {
+            private Pool pool;
             private Entity e;
 
             [SetUp]
-            public void Setup() => e = new Entity();
+            public void Setup() {
+                pool = new Pool();
+                e = pool.CreateEntity();
+            }
 
             [Test]
-            public void DispatchesOnComponentAdded() {
+            public void DispatchesAdded() {
                 var dispatched = 0;
-                e.OnComponentAdded += (sender, value) => {
+                var store = pool.Components<FakeComponent>();
+                store.Added += (entity, component) => {
                     dispatched++;
-                    Assert.That(value.Component is FakeComponent);
-                    Assert.That(value.Entity == e);
+                    Assert.That(component, Is.InstanceOf<FakeComponent>());
+                    Assert.That(entity, Is.SameAs(e));
                 };
 
-                e.OnComponentRemoved += (o, _) => Assert.Fail();
-                e.OnComponentReplaced += (o, _) => Assert.Fail();
+                store.Removed += (_, _) => Assert.Fail();
+                store.Replaced += (_, _, _) => Assert.Fail();
 
                 e.AddComponent(new FakeComponent());
                 Assert.AreEqual(1, dispatched);
             }
 
             [Test]
-            public void DispatchesOnComponentRemoved() {
+            public void DispatchesRemoved() {
                 var dispatched = 0;
-                e.AddComponent(new FakeComponent());
+                var added = new FakeComponent();
+                e.AddComponent(added);
 
-                e.OnComponentRemoved += (sender, value) => {
+                var store = pool.Components<FakeComponent>();
+                store.Removed += (entity, component) => {
                     dispatched++;
-                    Assert.That(value.Component is FakeComponent);
-                    Assert.That(value.Entity == e);
+                    Assert.That(component, Is.SameAs(added));
+                    Assert.That(entity, Is.SameAs(e));
                 };
 
-                e.OnComponentAdded += (o, _) => Assert.Fail();
-                e.OnComponentReplaced += (o, _) => Assert.Fail();
+                store.Added += (_, _) => Assert.Fail();
+                store.Replaced += (_, _, _) => Assert.Fail();
 
                 e.RemoveComponent<FakeComponent>();
                 Assert.AreEqual(1, dispatched);
             }
 
             [Test]
-            public void DispatchesOnComponentReplaced() {
-                var dispatched = 0;
-                var component = new FakeComponent();
-                e.AddComponent(component);
-
-                e.OnComponentReplaced += (sender, value) => {
-                    dispatched++;
-                    Assert.That(value.NewComponent == component);
-                    Assert.That(value.PreviousComponent == component);
-                };
-
-                e.OnComponentAdded += (o, _) => Assert.Fail();
-                e.OnComponentRemoved += (o, _) => Assert.Fail();
-
-                e.ReplaceComponent(component);
-                Assert.AreEqual(1, dispatched);
-            }
-
-            [Test]
-            public void DispatchesOnComponentReplaced_PrevAndNewValues()
-            {
+            public void DispatchesReplacedWithPreviousAndNewValues() {
                 var dispatched = 0;
                 var component = new FakeComponent();
                 var componentNew = new FakeComponent();
-
                 e.AddComponent(component);
 
-                e.OnComponentReplaced += (sender, value) => {
+                var store = pool.Components<FakeComponent>();
+                store.Replaced += (entity, previous, current) => {
                     dispatched++;
-                    Assert.That(value.NewComponent == componentNew);
-                    Assert.That(value.PreviousComponent == component);
+                    Assert.That(entity, Is.SameAs(e));
+                    Assert.That(previous, Is.SameAs(component));
+                    Assert.That(current, Is.SameAs(componentNew));
                 };
 
-                e.OnComponentAdded += (o, _) => Assert.Fail();
-                e.OnComponentRemoved += (o, _) => Assert.Fail();
+                store.Added += (_, _) => Assert.Fail();
+                store.Removed += (_, _) => Assert.Fail();
 
                 e.ReplaceComponent(componentNew);
                 Assert.AreEqual(1, dispatched);
+                Assert.That(e.GetComponent<FakeComponent>(), Is.SameAs(componentNew));
+            }
+
+            [Test]
+            public void EventsAreScopedToTheirComponentType() {
+                var otherDispatched = 0;
+                pool.Components<OtherComponent>().Added += (_, _) => otherDispatched++;
+
+                e.AddComponent(new OtherComponent());
+                Assert.That(otherDispatched, Is.EqualTo(1));
+
+                e.AddComponent(new FakeComponent());
+                Assert.That(otherDispatched, Is.EqualTo(1));
             }
 
             [Test]
