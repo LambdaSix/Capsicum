@@ -1,85 +1,88 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using Capsicum.Events;
 using Capsicum.Exceptions;
 using Capsicum.Interfaces;
 
 namespace Capsicum {
-    public partial class Entity {
-        public event EventHandler<EntityChanged> OnComponentAdded = delegate { };
-        public event EventHandler<EntityChanged> OnComponentRemoved = delegate { };
-        public event EventHandler<ComponentReplaced> OnComponentReplaced = delegate { };
-
-        public event EventHandler<EntityReleased> OnEntityReleased = delegate { };
-
-        private readonly HashSet<IComponent> _components = new HashSet<IComponent>();
-        private string _stringCache;
-
-        public bool IsEnabled { get; internal set; }
-        public Pool Pool { get; internal set; }
-        private int? _creationIndex;
-
-        internal int CreationIndex {
-            get => _creationIndex.GetValueOrDefault(0);
-            set { if (_creationIndex == null) _creationIndex = value; }
+    /// <summary>
+    /// A live slot in a <see cref="Pool"/>. Its components are held by the pool's per-type stores, so every
+    /// lookup is an O(1) array read that allocates nothing.
+    /// </summary>
+    /// <remarks>
+    /// Lookups match the exact component type a component was added as at runtime, not base types or interfaces.
+    /// Once released, the entity reports no components and refuses new ones; its slot goes to a new entity object.
+    /// </remarks>
+    public sealed class Entity {
+        /// <summary>Creates an entity in a private pool of its own.</summary>
+        public Entity() : this(new Pool(capacity: 1)) {
+            Pool.Attach(this, addToPool: true);
         }
+
+        internal Entity(Pool pool) {
+            Pool = pool;
+        }
+
+        /// <summary>True until the entity is released.</summary>
+        public bool IsEnabled { get; internal set; }
+
+        /// <summary>The pool that owns this entity's storage.</summary>
+        public Pool Pool { get; }
+
+        /// <summary>This entity's slot and generation in <see cref="Pool"/>.</summary>
+        public EntityHandle Handle { get; internal set; }
+
+        internal int CreationIndex => Handle.Index;
 
         /// <summary>
         /// Returns the <seealso cref="IComponent"/> of the requested type.
         /// </summary>
-        /// <typeparam name="T">Type of Component to look for</typeparam>
-        /// <returns>The instance of Component stored if it was found</returns>
-        public T GetComponent<T>() where T : class, IComponent {
-            var component = _components.OfType<T>().SingleOrDefault();
-            if (component == null) {
-                throw new ComponentNotRegisteredException(this, $"Component of type '{0}' was not registered");
-            }
-
-            return component;
-        }
+        /// <exception cref="ComponentNotRegisteredException">The entity has no <typeparamref name="T"/>.</exception>
+        public T GetComponent<T>() where T : class, IComponent =>
+            GetComponentOf<T>() ?? throw new ComponentNotRegisteredException(this,
+                $"Component of type '{typeof(T).Name}' was not registered");
 
         /// <summary>
         /// Try and get the specified component from this Entity.
         /// </summary>
-        /// <typeparam name="T">Type of component to look for</typeparam>
         /// <returns>The instance of the component if it was found, otherwise null</returns>
-        public T GetComponentOf<T>() where T : class, IComponent
-        {
-            var component = _components.OfType<T>().SingleOrDefault();
-            return component;
-        }
+        public T GetComponentOf<T>() where T : class, IComponent =>
+            IsEnabled ? Pool.Get<T>(Handle.Index) : null;
 
+        /// <summary>Gets the component of type <typeparamref name="T"/> if the entity has one.</summary>
         public bool TryGetComponent<T>(out T componentOut) where T : class, IComponent {
-            componentOut = _components.OfType<T>().SingleOrDefault();
+            componentOut = GetComponentOf<T>();
             return componentOut != null;
         }
 
-        public IEnumerable<IComponent> GetComponents() => _components;
-
         /// <summary>
-        /// Add a <seealso cref="IComponent"/> instance to this entity.
+        /// Determine if this entity contains any components of the specified type.
         /// </summary>
-        /// <exception cref="ComponentAlreadyRegisteredException">The entity already contains this Component</exception>
-        /// <typeparam name="T">Type of the component</typeparam>
-        /// <param name="component">Component instance</param>
-        /// <returns>This entity for further chaining</returns>
-        public Entity AddComponent<T>(T component) where T : class, IComponent {
-            return AddComponent(component, notify: true);
-        }
+        public bool HasComponent<T>() where T : IComponent => IsEnabled && Pool.Has<T>(Handle.Index);
 
-        internal Entity AddComponent<T>(T component, bool notify) where T : class, IComponent {
-            if (HasComponent<T>()) {
-                throw new ComponentAlreadyRegisteredException(this, component,
-                    $"Component type '{typeof (T).Name}' is already registered");
+        /// <summary>Returns a snapshot of this entity's components.</summary>
+        public IEnumerable<IComponent> GetComponents() {
+            var components = new List<IComponent>();
+            if (!IsEnabled) return components;
+
+            foreach (var store in Pool.Stores) {
+                if (store != null && store.Has(Handle.Index)) components.Add(store.GetUntyped(Handle.Index));
             }
 
-            _components.Add(component);
-            if (notify)
-                OnComponentAdded.Invoke(this, new EntityChanged(this, component));
+            return components;
+        }
+
+        /// <summary>
+        /// Add a <seealso cref="IComponent"/> instance to this entity, stored under its runtime type.
+        /// </summary>
+        /// <exception cref="ComponentAlreadyRegisteredException">The entity already contains this Component</exception>
+        /// <exception cref="InvalidOperationException">The entity has been released.</exception>
+        /// <returns>This entity for further chaining</returns>
+        public Entity AddComponent<T>(T component) where T : class, IComponent {
+            ArgumentNullException.ThrowIfNull(component);
+            ThrowIfReleased();
+
+            if (component.GetType() == typeof(T)) Pool.Components<T>().Add(this, component, notify: true);
+            else Pool.AddUntyped(this, component, notify: true);
 
             return this;
         }
@@ -87,107 +90,54 @@ namespace Capsicum {
         /// <summary>
         /// Remove a <seealso cref="IComponent"/> from this entity.
         /// </summary>
-        /// <typeparam name="T">Component type to remove</typeparam>
+        /// <exception cref="ComponentNotRegisteredException">The entity has no <typeparamref name="T"/>.</exception>
         /// <returns>This entity for further chaining</returns>
         public Entity RemoveComponent<T>() where T : class, IComponent {
-            return RemoveComponent<T>(notify: true);
-        }
-
-        internal Entity RemoveComponent<T>(bool notify) where T : class, IComponent {
-            if (HasComponent<T>()) {
-                Debug.Assert(_components.SingleOrDefault(s => s.GetType() == typeof (T)) != null,
-                    $"More than one component of type '{typeof (T).Name}' registered to Entity");
-
-                // This is sorta weird but should work?
-                _components.RemoveWhere(s => {
-                    if (s.GetType() == typeof (T)) {
-                        if (notify) OnComponentRemoved.Invoke(this, new EntityChanged(this, s));
-                        return true;
-                    }
-                    return false;
-                });
-            }
-            else {
+            if (!HasComponent<T>()) {
                 throw new ComponentNotRegisteredException(this,
-                    $"Component type '{typeof (T).Name}' ios not registered");
+                    $"Component type '{typeof(T).Name}' is not registered");
             }
 
+            Pool.Components<T>().Remove(this, notify: true);
             return this;
         }
 
+        /// <summary>Removes every component from this entity.</summary>
+        /// <param name="notify">Raise each store's <c>Removed</c> event.</param>
         public Entity RemoveAllComponents(bool notify = false) {
-            // For logical consistancy call the event. But maybe it should be optional?
-            if (notify) {
-                foreach (var component in _components) {
-                    OnComponentRemoved(this, new EntityChanged(this, component));
-                }
+            if (!IsEnabled) return this;
+
+            foreach (var store in Pool.Stores) {
+                if (store != null && store.Has(Handle.Index)) store.Remove(this, notify);
             }
 
-            _components.Clear();
             return this;
         }
 
+        /// <summary>Swaps the entity's <typeparamref name="T"/> for <paramref name="newComponentInstance"/>.</summary>
+        /// <exception cref="ComponentNotRegisteredException">The entity has no <typeparamref name="T"/>.</exception>
         public Entity ReplaceComponent<T>(T newComponentInstance) where T : class, IComponent {
-            if (HasComponent<T>()) {
-                var oldComponent = GetComponent<T>();
-                RemoveComponent<T>(notify: false).AddComponent(newComponentInstance, notify: false);
-                OnComponentReplaced.Invoke(this, new ComponentReplaced(this, oldComponent, newComponentInstance));
-            }
-            else {
+            ArgumentNullException.ThrowIfNull(newComponentInstance);
+            if (!HasComponent<T>()) {
                 throw new ComponentNotRegisteredException(this,
-                    $"Component '{typeof (T).Name}' is not registered");
+                    $"Component '{typeof(T).Name}' is not registered");
             }
 
+            Pool.Components<T>().Replace(this, newComponentInstance);
             return this;
         }
 
         /// <summary>
-        /// Determine if this entity contains any components of the specified type.
+        /// Release this entity and its components; its slot is reused by a later entity.
         /// </summary>
-        /// <returns></returns>
-        public bool HasComponent<T>() where T : IComponent {
-            return _components.Any(s => s.GetType() == typeof (T));
-        }
+        /// <param name="notify">Raise each store's <c>Removed</c> event for the released components.</param>
+        public void Destroy(bool notify = false) => Pool.Release(this, notify);
 
-        /// <summary>
-        /// Free this entity for reuse.
-        /// </summary>
-        public void Destroy(bool notify = false) {
-            OnEntityReleased.Invoke(this, new EntityReleased(this));
-            Pool?.MoveToGraveyard(this);
+        /// <inheritdoc />
+        public override string ToString() => $"Entity_{Handle}";
 
-            RemoveAllComponents(notify);
-
-            // Unhook all the subscribers by attaching a blank delegate.
-            OnComponentAdded = delegate { };
-            OnComponentRemoved = delegate { };
-            OnComponentReplaced = delegate { };
-
-            IsEnabled = false;
-        }
-
-        public override string ToString() {
-            if (_stringCache == null) {
-                var sb = new StringBuilder();
-                sb.Append("Entity_");
-                sb.Append(CreationIndex);
-
-                sb.Append("(");
-
-                var componentStr = String.Join(", ", _components.Select(s => s.GetType()));
-                sb.Append(componentStr);
-
-                sb.Append(")");
-
-                _stringCache = sb.ToString();
-            }
-
-            return _stringCache;
-        }
-
-        public override int GetHashCode() {
-            // The creationIndex should stay the same for the lifetime of the object.
-            return CreationIndex;
+        private void ThrowIfReleased() {
+            if (!IsEnabled) throw new InvalidOperationException($"Entity_{Handle} has been released.");
         }
     }
 }
