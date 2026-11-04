@@ -58,7 +58,9 @@ public sealed class EventBuffer<T> where T : struct {
 
     /// <summary>Empties the buffer and rewinds every reader.</summary>
     /// <returns>What the run emitted, how many of those events some reader never read, and how many were refused.</returns>
+    /// <remarks>Clearing inside a running system is a write, so a reader cannot discard events other readers have not seen.</remarks>
     public EventBufferTally Clear() {
+        AccessChecker?.Write(ComponentType<T>.Id);
         var oldest = _count;
         foreach (var reader in _readers) oldest = Math.Min(oldest, reader.Position);
         var tally = new EventBufferTally(_count, _readers.Count == 0 ? _count : _count - oldest, _refused);

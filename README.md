@@ -176,7 +176,7 @@ using Capsicum.Systems;
 
 public sealed class Movement : ISystem<GameTick> {
     public SystemDeclaration Declaration { get; } =
-        SystemDeclaration.Create("movement", reads: [typeof(Velocity)], writes: [typeof(Position)]);
+        SystemDeclaration.Create("movement", reads: [typeof(Position), typeof(Velocity)], writes: [typeof(Position)]);
 
     public int Run(in GameTick tick) {
         var visited = 0;
@@ -196,7 +196,8 @@ foreach (var finding in schedule.Findings) Console.WriteLine(finding);   // e.g.
 schedule.Run(tick);
 ```
 
-The schedule never reorders. `Findings` lists every system that reads a type a later system writes; some of those
+The schedule never reorders. `Findings` lists every system that reads a type a later system writes. A system that
+updates a type in place lists it in both reads and writes, so it is reported against later writers too. Some findings
 are intended (a pass that reads last run's value), so the host decides which to accept. Two systems may not share a
 name, because observers key on it.
 
@@ -212,9 +213,11 @@ var schedule = new SystemSchedule<GameTick>(systems, observer, checker);
 ```
 
 While a system runs, any component or event access its declaration doesn't allow throws
-`UndeclaredAccessException`. Writing a type also allows reading it. Getting or querying a component is a read;
-adding, removing or replacing one, releasing an entity and emitting an event are writes. A class component handed
-out by a read can still be mutated, which the checker can't see. Access outside a running system isn't checked.
+`UndeclaredAccessException`. Reads and writes are checked separately, so a write doesn't allow a read. Getting a
+component and enumerating a query (for each type it names, even if the query was built earlier) are reads;
+adding, removing or replacing one, releasing an entity, and emitting or clearing events are writes. A class component handed
+out by a read can still be mutated, which the checker can't see. Access outside a running system isn't checked. A schedule run from inside a system checks the inner systems, and the
+outer declaration applies again when it returns.
 
 ### Event buffers
 

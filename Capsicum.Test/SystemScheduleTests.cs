@@ -86,6 +86,28 @@ public class SystemScheduleTests {
     }
 
     [Test]
+    public void AReadModifyWriteSystemIsReportedAgainstALaterWriter() {
+        var update = Pass("update", reads: [typeof(FakeComponent)], writes: [typeof(FakeComponent)]);
+        var later = Pass("later", writes: [typeof(FakeComponent)]);
+
+        var schedule = new SystemSchedule<Tick>([update, later]);
+
+        Assert.That(schedule.Findings, Has.Length.EqualTo(1));
+        Assert.That(schedule.Findings[0].Reader, Is.SameAs(update.Declaration));
+        Assert.That(schedule.Findings[0].Writer, Is.SameAs(later.Declaration));
+    }
+
+    [Test]
+    public void WritersThatDoNotReadAreNotReportedAgainstEachOther() {
+        var schedule = new SystemSchedule<Tick>([
+            Pass("first-emitter", writes: [typeof(FakeComponent)]),
+            Pass("second-emitter", writes: [typeof(FakeComponent)]),
+        ]);
+
+        Assert.That(schedule.Findings, Is.Empty);
+    }
+
+    [Test]
     public void TheObserverSeesEachSystemOncePerRunWithWhatItVisited() {
         var observer = new RecordingObserver();
         var schedule = new SystemSchedule<Tick>([Pass("a", visited: 3), Pass("b", visited: 7)], observer);
@@ -129,9 +151,11 @@ public class SystemScheduleTests {
     }
 
     [Test]
-    public void ADeclarationRefusesATypeListedTwice() {
-        Assert.Throws<ArgumentException>(() => SystemDeclaration.Create("a", [typeof(FakeComponent)], [typeof(FakeComponent)]));
+    public void ADeclarationMayReadAndWriteATypeButNotListItTwiceInOneList() {
+        Assert.DoesNotThrow(() => SystemDeclaration.Create("a", [typeof(FakeComponent)], [typeof(FakeComponent)]));
+
         Assert.Throws<ArgumentException>(() => SystemDeclaration.Create("a", [typeof(FakeComponent), typeof(FakeComponent)], []));
+        Assert.Throws<ArgumentException>(() => SystemDeclaration.Create("a", [], [typeof(FakeComponent), typeof(FakeComponent)]));
     }
 
     [Test]

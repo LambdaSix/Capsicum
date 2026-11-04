@@ -51,7 +51,8 @@ public sealed class SystemSchedule<TContext> {
     public ReadOnlySpan<SystemDeclaration> Systems => _declarations;
 
     /// <summary>
-    /// Every place a system reads a type that a later system writes, in reader then writer order. The host decides which
+    /// Every place a system reads a type that a later system writes, in reader then writer order. A system that reads and
+    /// writes a type lists it in both, so it is reported against later writers too. The host decides which
     /// of these are intended, for example a pass that deliberately reads last run's value.
     /// </summary>
     public ImmutableArray<ScheduleFinding> Findings { get; }
@@ -66,12 +67,12 @@ public sealed class SystemSchedule<TContext> {
             _observer?.Starting(position, declaration);
 
             int visited;
-            _checker?.Enter(declaration);
+            var outer = _checker?.Enter(declaration);
             try {
                 visited = systems[position].Run(in context);
             }
             finally {
-                _checker?.Exit();
+                _checker?.Exit(outer);
             }
 
             _observer?.Finished(position, declaration, visited);
