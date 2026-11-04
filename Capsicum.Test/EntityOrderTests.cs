@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Capsicum.Interfaces;
+using Capsicum.Systems;
 using NUnit.Framework;
 
 namespace Capsicum.Test;
@@ -140,5 +141,46 @@ public class EntityOrderTests {
         Assert.Throws<InvalidOperationException>(() => {
             foreach (var entity in order) entity.Destroy();
         });
+    }
+
+    [Test]
+    public void A_key_cannot_be_changed_through_ref_so_removal_always_finds_it() {
+        var pool = new Pool();
+        var order = pool.OrderBy<Serial>();
+        var entity = pool.CreateEntity().Add(new Serial(1));
+        pool.CreateEntity().Add(new Serial(2));
+
+        Assert.Throws<InvalidOperationException>(() => entity.Ref<Serial>());
+        entity.Replace(new Serial(3));
+        entity.Destroy();
+
+        Assert.That(Walk(order), Is.EqualTo(new long[] { 2 }));
+        Assert.That(pool.StructComponents<Serial>().Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Walking_an_order_in_a_system_needs_a_read_of_its_key() {
+        var checker = new SystemAccessChecker();
+        var pool = new Pool { AccessChecker = checker };
+        var order = pool.OrderBy<Serial>();
+        pool.CreateEntity().Add(new Serial(1)).Add(new Health(1));
+        void Run(Type[] reads, Action body) => new SystemSchedule<int>([new Body(reads, body)], checker: checker).Run(0);
+        var walked = 0;
+
+        Run([typeof(Serial)], () => { foreach (var _ in order) walked++; });
+        Run([typeof(Serial), typeof(Health)], () => { foreach (var _ in order.Where(pool.Query().With<Health>())) walked++; });
+        Assert.That(walked, Is.EqualTo(2));
+
+        Assert.Throws<UndeclaredAccessException>(() => Run([], () => { foreach (var _ in order) walked++; }));
+        Assert.Throws<UndeclaredAccessException>(() => Run([typeof(Health)], () => { foreach (var _ in order.Where(pool.Query().With<Health>())) walked++; }));
+    }
+
+    private sealed class Body(Type[] reads, Action body) : ISystem<int> {
+        public SystemDeclaration Declaration { get; } = SystemDeclaration.Create("body", reads, []);
+
+        public int Run(in int context) {
+            body();
+            return 0;
+        }
     }
 }

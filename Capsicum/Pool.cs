@@ -173,7 +173,7 @@ namespace Capsicum {
             var id = ComponentType<T>.Id;
             if (id < _orders.Length && _orders[id] is { } existing) return existing;
             if (id >= _orders.Length) Array.Resize(ref _orders, Math.Max(id + 1, _orders.Length * 2));
-            var order = new EntityOrder(this);
+            var order = new EntityOrder(this, id);
             var store = StructStore<T>();
             using (order.BeginBulkLoad()) {
                 for (var position = 0; position < store.Count; position++) {

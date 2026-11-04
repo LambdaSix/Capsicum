@@ -12,18 +12,20 @@ namespace Capsicum;
 /// An add with the highest key so far appends; any other add or a changed key is placed by binary search. A remove keeps the order of the rest. A bulk load (a restore)
 /// appends without placing and sorts once when it ends; a duplicate key is refused before anything changes, or by the end of a bulk load, which leaves the order sorted but
 /// holding the duplicate, so a load that fails it must be abandoned. Walking skips entities the pool does not list. Changing the order or the pool's entities while walking
-/// it throws.
+/// it throws. Walking reads the key component, so a running system must declare it. A key changes only through <see cref="Entity.Replace{T}"/>, which moves the
+/// entity; <see cref="Entity.Ref{T}"/> refuses key components.
 /// </remarks>
 public sealed class EntityOrder {
     private const int InitialCapacity = 16;
 
     private readonly Pool _pool;
+    private readonly int _keyTypeId;
     private int[] _indices = new int[InitialCapacity];
     private long[] _keys = new long[InitialCapacity];
     private int _count;
     private bool _bulk;
 
-    internal EntityOrder(Pool pool) => _pool = pool;
+    internal EntityOrder(Pool pool, int keyTypeId) => (_pool, _keyTypeId) = (pool, keyTypeId);
 
     /// <summary>Entities in the order, listed or not.</summary>
     public int Count => _count;
@@ -160,6 +162,7 @@ public sealed class EntityOrder {
 
         internal Enumerator(EntityOrder order, Query query, bool filtered) {
             if (order._bulk) throw new InvalidOperationException("The order is being bulk loaded; walk it once the load has ended.");
+            order._pool.AccessChecker?.Read(order._keyTypeId);
             _order = order;
             _query = query;
             _filtered = filtered;
