@@ -144,6 +144,7 @@ A `ref` is valid until the next add or remove of that component type, which may 
 struct and class components alike: `pool.Query().With<Health>().With<Position>()`.
 
 With a `SystemAccessChecker`, `Ref<T>` needs `T` in both the system's reads and writes, and `Read<T>` needs it in its reads.
+Walking an order reads its key component, so a system that walks one declares the key too.
 
 ### Ordered iteration
 
@@ -164,7 +165,8 @@ using (bySerial.BeginBulkLoad()) {                  // a restore: append unsorte
 ```
 
 The highest key so far appends; any other add, and a `Replace` that changes the key, is placed by binary search. A
-remove keeps the order of the rest. Keys are unique, and a duplicate is refused before the component is stored, so
+remove keeps the order of the rest. A key changes only through `Replace`: `Ref<T>` refuses a key component, since a key edited
+in place would leave the order holding a stale one. Keys are unique, and a duplicate is refused before the component is stored, so
 the walk is a pure function of the keys. Walking skips entities the pool doesn't list, and changing the order or the
 pool's entities while walking throws.
 

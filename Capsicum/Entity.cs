@@ -149,10 +149,12 @@ namespace Capsicum {
 
         /// <summary>
         /// The entity's <typeparamref name="T"/>, by reference, to read and change in place. It is valid until the next add or remove of a <typeparamref name="T"/> on any entity.
-        /// Changing an <see cref="IOrderKey"/> through it does not move the entity in its order; use <see cref="Replace{T}"/> for that.
         /// </summary>
         /// <exception cref="ComponentNotRegisteredException">The entity has no <typeparamref name="T"/>.</exception>
+        /// <exception cref="InvalidOperationException"><typeparamref name="T"/> is an <see cref="IOrderKey"/>; change it with <see cref="Replace{T}"/>, which keeps its order in step.</exception>
         public ref T Ref<T>() where T : struct, IComponent {
+            if (OrderKeyType<T>.IsKey)
+                throw new InvalidOperationException($"'{typeof(T).Name}' orders entities, so it changes only through Replace, which moves the entity in its order.");
             Pool.AccessChecker?.Read(ComponentType<T>.Id);
             Pool.CheckWrite<T>();
             return ref StructSlot<T>();
