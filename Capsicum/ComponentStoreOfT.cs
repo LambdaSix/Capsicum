@@ -32,6 +32,8 @@ namespace Capsicum {
         /// <inheritdoc />
         public override Type ComponentType => typeof(T);
 
+        internal override int TypeId => Capsicum.ComponentType<T>.Id;
+
         internal T Get(int index) {
             var sparse = _sparse;
             if ((uint)index >= (uint)sparse.Length) return null;

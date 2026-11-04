@@ -65,7 +65,9 @@ namespace Capsicum {
             if (!IsEnabled) return components;
 
             foreach (var store in Pool.Stores) {
-                if (store != null && store.Has(Handle.Index)) components.Add(store.GetUntyped(Handle.Index));
+                if (store == null || !store.Has(Handle.Index)) continue;
+                Pool.AccessChecker?.Read(store.TypeId);
+                components.Add(store.GetUntyped(Handle.Index));
             }
 
             return components;
@@ -81,7 +83,10 @@ namespace Capsicum {
             ArgumentNullException.ThrowIfNull(component);
             ThrowIfReleased();
 
-            if (component.GetType() == typeof(T)) Pool.Components<T>().Add(this, component, notify: true);
+            if (component.GetType() == typeof(T)) {
+                Pool.CheckWrite<T>();
+                Pool.Components<T>().Add(this, component, notify: true);
+            }
             else Pool.AddUntyped(this, component, notify: true);
 
             return this;
@@ -98,6 +103,7 @@ namespace Capsicum {
                     $"Component type '{typeof(T).Name}' is not registered");
             }
 
+            Pool.CheckWrite<T>();
             Pool.Components<T>().Remove(this, notify: true);
             return this;
         }
@@ -107,6 +113,7 @@ namespace Capsicum {
         public Entity RemoveAllComponents(bool notify = false) {
             if (!IsEnabled) return this;
 
+            Pool.CheckWriteOfEach(Pool.Stores, Handle.Index);
             foreach (var store in Pool.Stores) {
                 if (store != null && store.Has(Handle.Index)) store.Remove(this, notify);
             }
@@ -123,6 +130,7 @@ namespace Capsicum {
                     $"Component '{typeof(T).Name}' is not registered");
             }
 
+            Pool.CheckWrite<T>();
             Pool.Components<T>().Replace(this, newComponentInstance);
             return this;
         }

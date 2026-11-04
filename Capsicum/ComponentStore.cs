@@ -15,6 +15,8 @@ namespace Capsicum {
         /// <summary>Incremented by every add and remove; replacing a component in place does not change it.</summary>
         public int Version { get; protected set; }
 
+        internal abstract int TypeId { get; }
+
         internal abstract bool Has(int index);
 
         internal abstract int IndexAt(int position);

@@ -3,7 +3,8 @@ using System.Collections.Generic;
 
 namespace Capsicum {
     /// <summary>
-    /// Process-wide dense ids for component types, used to index each pool's store array.
+    /// Process-wide dense ids for component and event types, used to index each pool's store array and the access
+    /// tables of declared systems.
     /// </summary>
     /// <remarks>
     /// Ids are handed out in first-use order, so they are stable within a process but not across runs. Nothing
@@ -12,15 +13,23 @@ namespace Capsicum {
     internal static class ComponentType {
         private static readonly object Gate = new object();
         private static readonly Dictionary<Type, int> Ids = new Dictionary<Type, int>();
+        private static readonly List<Type> Types = new List<Type>();
 
         internal static int IdOf(Type type) {
             lock (Gate) {
                 if (!Ids.TryGetValue(type, out var id)) {
                     id = Ids.Count;
                     Ids.Add(type, id);
+                    Types.Add(type);
                 }
 
                 return id;
+            }
+        }
+
+        internal static Type TypeOf(int id) {
+            lock (Gate) {
+                return Types[id];
             }
         }
     }

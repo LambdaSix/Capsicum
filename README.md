@@ -28,6 +28,9 @@ pauses matter.
 - **Generational handles.** An `EntityHandle` names a slot plus the generation it was created on, so a stale handle never resolves to the slot's new occupant.
 - **Safe iteration.** Adding or removing a component type a query depends on while it runs throws, instead of skipping or repeating entities.
 - **Typed events.** Each component type has its own `Added`, `Removed` and `Replaced` events, with no per-entity subscriptions.
+- **Ordered systems with declared access.** A `SystemSchedule` runs systems in the order you list them and reports where a reader is placed before a writer. An optional checker throws on any access a running system didn't declare.
+- **Per-system observer hook** for timing, allocation and entities visited, without Capsicum reading a clock.
+- **Bounded event buffers.** Same-run delivery, a fixed capacity that refuses instead of growing, and a count of events left unread.
 - **Binary serialization** for components that implement `ISerializableComponent`.
 
 ## Getting Started
@@ -163,6 +166,75 @@ public sealed class Projectile : IEntityAspect {
 var bullet = pool.CreateEntity(new Projectile());
 ```
 
+### Systems
+
+A system declares what it reads and writes and returns how many entities it visited. The context type is
+whatever your host passes each run:
+
+```csharp
+using Capsicum.Systems;
+
+public sealed class Movement : ISystem<GameTick> {
+    public SystemDeclaration Declaration { get; } =
+        SystemDeclaration.Create("movement", reads: [typeof(Velocity)], writes: [typeof(Position)]);
+
+    public int Run(in GameTick tick) {
+        var visited = 0;
+        foreach (var entity in tick.Pool.Query().With<Position>().With<Velocity>()) {
+            var p = entity.GetComponent<Position>();
+            var v = entity.GetComponent<Velocity>();
+            p.X += v.Dx;
+            visited++;
+        }
+
+        return visited;
+    }
+}
+
+var schedule = new SystemSchedule<GameTick>([new Input(), new Movement(), new Collision()], observer);
+foreach (var finding in schedule.Findings) Console.WriteLine(finding);   // e.g. a reader placed before its writer
+schedule.Run(tick);
+```
+
+The schedule never reorders. `Findings` lists every system that reads a type a later system writes; some of those
+are intended (a pass that reads last run's value), so the host decides which to accept. Two systems may not share a
+name, because observers key on it.
+
+An `ISystemObserver` is called before and after each system with its position and declaration, and after with
+the entities it visited. Use it for timing and allocation counts.
+
+#### Checking declared access
+
+```csharp
+var checker = new SystemAccessChecker();
+pool.AccessChecker = checker;
+var schedule = new SystemSchedule<GameTick>(systems, observer, checker);
+```
+
+While a system runs, any component or event access its declaration doesn't allow throws
+`UndeclaredAccessException`. Writing a type also allows reading it. Getting or querying a component is a read;
+adding, removing or replacing one, releasing an entity and emitting an event are writes. A class component handed
+out by a read can still be mutated, which the checker can't see. Access outside a running system isn't checked.
+
+### Event buffers
+
+```csharp
+using Capsicum.Events;
+
+var deaths = new EventBuffer<Died>(capacity: 256);
+var corpses = deaths.CreateReader();        // one reader per consuming system, created once
+
+deaths.TryEmit(new Died(monster));          // false when full; the refusal is counted
+foreach (ref readonly var died in corpses.Read()) { /* ... */ }
+
+EventBufferTally tally = deaths.Clear();    // at end of run: Emitted, Unread, Refused
+```
+
+A reader sees every event emitted before it reads in the same run, so put readers after their emitters (the
+schedule's findings show it when they aren't). Each reader has its own position. `Clear` empties the buffer and
+reports events that at least one reader never read. With no readers, every event counts as unread. Emitting and
+reading allocate nothing.
+
 ### Serialization
 
 Components that implement `ISerializableComponent` can be written and read with the binary
@@ -185,6 +257,8 @@ not for durable saves that must survive refactoring.
 | Identity | `EntityHandle` = slot index + generation. Index 0 is never issued. |
 | Hashing | `Entity` hashes by reference. `EntityHandle` uses a fixed combination of index and generation, never a per-process seed. |
 | Ordering | Stores iterate in insertion/removal order. `QueryInto` and `Pool` enumeration are in handle index order. |
+| Systems | An explicit ordered list; declarations are validated, never used to reorder. No threading. |
+| Events | One fixed-capacity buffer per event type, cleared by the host each run. Overflow is a counted refusal. |
 | Threading | A pool isn't thread-safe. Use it from one thread, or put your own synchronisation around it. |
 
 Component type ids are assigned in first-use order within a process, so `Entity.GetComponents()` is not
