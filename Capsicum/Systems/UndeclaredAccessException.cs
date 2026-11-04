@@ -7,7 +7,7 @@ namespace Capsicum.Systems;
 public sealed class UndeclaredAccessException : InvalidOperationException {
     /// <summary>Creates the exception for one undeclared access.</summary>
     public UndeclaredAccessException(SystemDeclaration system, Type type, bool write)
-        : base($"System '{system.Name}' {(write ? "wrote" : "read")} {type.Name} without declaring it in its {(write ? "writes" : "reads or writes")}.") {
+        : base($"System '{system.Name}' {(write ? "wrote" : "read")} {type.Name} without declaring it in its {(write ? "writes" : "reads")}.") {
         System = system;
         Type = type;
         IsWrite = write;

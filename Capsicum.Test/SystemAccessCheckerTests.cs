@@ -47,8 +47,11 @@ public class SystemAccessCheckerTests {
     }
 
     [Test]
-    public void ADeclaredWriteAllowsReadingTheSameType() {
-        Assert.DoesNotThrow(() => RunChecked([], [typeof(FakeComponent)], entity => entity.HasComponent<FakeComponent>()));
+    public void AReadNeedsTheTypeInReadsEvenWhenTheSystemWritesIt() {
+        RunChecked([typeof(FakeComponent)], [typeof(FakeComponent)], entity => entity.HasComponent<FakeComponent>());
+
+        Assert.Throws<UndeclaredAccessException>(() =>
+            RunChecked([], [typeof(FakeComponent)], entity => entity.HasComponent<FakeComponent>()));
     }
 
     [Test]
@@ -80,11 +83,57 @@ public class SystemAccessCheckerTests {
     }
 
     [Test]
-    public void AQueryNeedsAReadOfEveryTypeItNames() {
-        RunChecked([typeof(FakeComponent), typeof(OtherComponent)], [], entity => entity.Pool.Query().With<FakeComponent>().Without<OtherComponent>());
+    public void EnumeratingAQueryNeedsAReadOfEveryTypeItNames() {
+        var matched = 0;
+        RunChecked([typeof(FakeComponent), typeof(OtherComponent)], [], entity => {
+            foreach (var _ in entity.Pool.Query().With<FakeComponent>().Without<OtherComponent>()) matched++;
+        });
+        Assert.That(matched, Is.EqualTo(1));
 
-        Assert.Throws<UndeclaredAccessException>(() =>
-            RunChecked([typeof(FakeComponent)], [], entity => entity.Pool.Query().With<FakeComponent>().Without<OtherComponent>()));
+        Assert.Throws<UndeclaredAccessException>(() => RunChecked([typeof(FakeComponent)], [], entity => {
+            foreach (var _ in entity.Pool.Query().With<FakeComponent>().Without<OtherComponent>()) { }
+        }));
+    }
+
+    [Test]
+    public void AQueryBuiltBeforeTheRunIsCheckedWhenEnumerated() {
+        var cached = _pool.Query().With<FakeComponent>();
+
+        var matched = 0;
+        RunChecked([typeof(FakeComponent)], [], _ => {
+            foreach (var entity in cached) matched++;
+        });
+        Assert.That(matched, Is.EqualTo(1));
+
+        Assert.Throws<UndeclaredAccessException>(() => RunChecked([], [], _ => {
+            foreach (var entity in cached) { }
+        }));
+    }
+
+    [Test]
+    public void TheOuterDeclarationAppliesAgainAfterANestedSchedule() {
+        var inner = new SystemSchedule<Entity>([new Probe("inner", [typeof(OtherComponent)], [], _ => { })], checker: _checker);
+
+        var thrown = Assert.Throws<UndeclaredAccessException>(() => RunChecked([typeof(FakeComponent)], [], entity => {
+            entity.GetComponent<FakeComponent>();
+            inner.Run(entity);
+            entity.HasComponent<OtherComponent>();
+        }));
+
+        Assert.That(thrown!.System.Name, Is.EqualTo("probe"));
+        Assert.That(thrown.Type, Is.EqualTo(typeof(OtherComponent)));
+    }
+
+    [Test]
+    public void ClearingAnEventBufferNeedsAWrite() {
+        var hits = new EventBuffer<Hit>(4) {AccessChecker = _checker};
+        hits.TryEmit(new Hit(3));
+
+        Assert.Throws<UndeclaredAccessException>(() => RunChecked([typeof(Hit)], [], _ => hits.Clear()));
+        Assert.That(hits.Count, Is.EqualTo(1));
+
+        RunChecked([], [typeof(Hit)], _ => hits.Clear());
+        Assert.That(hits.Count, Is.EqualTo(0));
     }
 
     [Test]

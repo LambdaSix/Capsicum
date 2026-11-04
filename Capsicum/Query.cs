@@ -37,7 +37,7 @@ namespace Capsicum {
                 throw new InvalidOperationException($"A query takes at most {MaxClauses} With clauses.");
 
             var next = this;
-            next._with[next._withCount++] = _pool.Components<T>();
+            next._with[next._withCount++] = _pool.Store<T>();
             return next;
         }
 
@@ -48,7 +48,7 @@ namespace Capsicum {
                 throw new InvalidOperationException($"A query takes at most {MaxClauses} Without clauses.");
 
             var next = this;
-            next._without[next._withoutCount++] = _pool.Components<T>();
+            next._without[next._withoutCount++] = _pool.Store<T>();
             return next;
         }
 
@@ -96,13 +96,16 @@ namespace Capsicum {
                 _position = 0;
                 Current = null;
 
+                var checker = query._pool.AccessChecker;
                 for (var i = 0; i < query._withCount; i++) {
                     var store = query._with[i];
+                    checker?.Read(store.TypeId);
                     _versions[i] = store.Version;
                     if (_driver == null || store.Count < _driver.Count) _driver = store;
                 }
 
                 for (var i = 0; i < query._withoutCount; i++) {
+                    checker?.Read(query._without[i].TypeId);
                     _versions[MaxClauses + i] = query._without[i].Version;
                 }
 

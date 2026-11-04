@@ -135,8 +135,12 @@ namespace Capsicum {
 
         /// <summary>Returns this pool's store for <typeparamref name="T"/>, creating it on first use.</summary>
         public ComponentStore<T> Components<T>() where T : class, IComponent {
+            AccessChecker?.Read(ComponentType<T>.Id);
+            return Store<T>();
+        }
+
+        internal ComponentStore<T> Store<T>() where T : class, IComponent {
             var id = ComponentType<T>.Id;
-            AccessChecker?.Read(id);
             EnsureStoreCapacity(id);
             return (ComponentStore<T>)(_stores[id] ??= new ComponentStore<T>());
         }
@@ -214,8 +218,12 @@ namespace Capsicum {
         }
 
         internal bool Has<T>(int index) {
+            AccessChecker?.Read(ComponentType<T>.Id);
+            return Contains<T>(index);
+        }
+
+        internal bool Contains<T>(int index) {
             var id = ComponentType<T>.Id;
-            AccessChecker?.Read(id);
             var stores = _stores;
             return id < stores.Length && stores[id] is { } store && store.Has(index);
         }

@@ -85,7 +85,7 @@ namespace Capsicum {
 
             if (component.GetType() == typeof(T)) {
                 Pool.CheckWrite<T>();
-                Pool.Components<T>().Add(this, component, notify: true);
+                Pool.Store<T>().Add(this, component, notify: true);
             }
             else Pool.AddUntyped(this, component, notify: true);
 
@@ -98,13 +98,13 @@ namespace Capsicum {
         /// <exception cref="ComponentNotRegisteredException">The entity has no <typeparamref name="T"/>.</exception>
         /// <returns>This entity for further chaining</returns>
         public Entity RemoveComponent<T>() where T : class, IComponent {
-            if (!HasComponent<T>()) {
+            Pool.CheckWrite<T>();
+            if (!IsEnabled || !Pool.Contains<T>(Handle.Index)) {
                 throw new ComponentNotRegisteredException(this,
                     $"Component type '{typeof(T).Name}' is not registered");
             }
 
-            Pool.CheckWrite<T>();
-            Pool.Components<T>().Remove(this, notify: true);
+            Pool.Store<T>().Remove(this, notify: true);
             return this;
         }
 
@@ -125,13 +125,13 @@ namespace Capsicum {
         /// <exception cref="ComponentNotRegisteredException">The entity has no <typeparamref name="T"/>.</exception>
         public Entity ReplaceComponent<T>(T newComponentInstance) where T : class, IComponent {
             ArgumentNullException.ThrowIfNull(newComponentInstance);
-            if (!HasComponent<T>()) {
+            Pool.CheckWrite<T>();
+            if (!IsEnabled || !Pool.Contains<T>(Handle.Index)) {
                 throw new ComponentNotRegisteredException(this,
                     $"Component '{typeof(T).Name}' is not registered");
             }
 
-            Pool.CheckWrite<T>();
-            Pool.Components<T>().Replace(this, newComponentInstance);
+            Pool.Store<T>().Replace(this, newComponentInstance);
             return this;
         }
 
