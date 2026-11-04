@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Capsicum.Events;
 using Capsicum.Exceptions;
 using Capsicum.Interfaces;
+using Capsicum.Systems;
 
 namespace Capsicum {
     /// <summary>
@@ -45,6 +46,12 @@ namespace Capsicum {
             _generations = new int[slots];
             _listed = new bool[slots];
         }
+
+        /// <summary>
+        /// Checks component access against the declaration of the system a <see cref="SystemSchedule{TContext}"/>
+        /// is running; null, the default, checks nothing.
+        /// </summary>
+        public SystemAccessChecker AccessChecker { get; set; }
 
         /// <summary>Number of live entities enumerated by this pool.</summary>
         public int Count { get; private set; }
@@ -129,6 +136,7 @@ namespace Capsicum {
         /// <summary>Returns this pool's store for <typeparamref name="T"/>, creating it on first use.</summary>
         public ComponentStore<T> Components<T>() where T : class, IComponent {
             var id = ComponentType<T>.Id;
+            AccessChecker?.Read(id);
             EnsureStoreCapacity(id);
             return (ComponentStore<T>)(_stores[id] ??= new ComponentStore<T>());
         }
@@ -180,6 +188,7 @@ namespace Capsicum {
 
             var index = entity.Handle.Index;
             var stores = _stores;
+            CheckWriteOfEach(stores, index);
             for (var id = 0; id < stores.Length; id++) {
                 var store = stores[id];
                 if (store != null && store.Has(index)) store.Remove(entity, notifyComponents);
@@ -199,22 +208,34 @@ namespace Capsicum {
 
         internal T Get<T>(int index) where T : class, IComponent {
             var id = ComponentType<T>.Id;
+            AccessChecker?.Read(id);
             var stores = _stores;
             return id < stores.Length && stores[id] is ComponentStore<T> store ? store.Get(index) : null;
         }
 
         internal bool Has<T>(int index) {
             var id = ComponentType<T>.Id;
+            AccessChecker?.Read(id);
             var stores = _stores;
             return id < stores.Length && stores[id] is { } store && store.Has(index);
         }
 
         internal ComponentStore[] Stores => _stores;
 
+        internal void CheckWrite<T>() => AccessChecker?.Write(ComponentType<T>.Id);
+
+        internal void CheckWriteOfEach(ComponentStore[] stores, int index) {
+            if (AccessChecker == null) return;
+            foreach (var store in stores) {
+                if (store != null && store.Has(index)) AccessChecker.Write(store.TypeId);
+            }
+        }
+
         internal void AddUntyped(Entity entity, IComponent component, bool notify) {
             ArgumentNullException.ThrowIfNull(component);
             var type = component.GetType();
             var id = ComponentType.IdOf(type);
+            AccessChecker?.Write(id);
             EnsureStoreCapacity(id);
             var store = _stores[id] ??= (ComponentStore)Activator.CreateInstance(typeof(ComponentStore<>).MakeGenericType(type));
             store.AddUntyped(entity, component, notify);
