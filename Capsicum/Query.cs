@@ -32,23 +32,23 @@ namespace Capsicum {
 
         /// <summary>Requires matched entities to have a <typeparamref name="T"/>.</summary>
         /// <exception cref="InvalidOperationException">The query already has <see cref="MaxClauses"/> <c>With</c> clauses.</exception>
-        public Query With<T>() where T : class, IComponent {
+        public Query With<T>() where T : IComponent {
             if (_withCount == MaxClauses)
                 throw new InvalidOperationException($"A query takes at most {MaxClauses} With clauses.");
 
             var next = this;
-            next._with[next._withCount++] = _pool.Store<T>();
+            next._with[next._withCount++] = _pool.AnyStore<T>();
             return next;
         }
 
         /// <summary>Requires matched entities not to have a <typeparamref name="T"/>.</summary>
         /// <exception cref="InvalidOperationException">The query already has <see cref="MaxClauses"/> <c>Without</c> clauses.</exception>
-        public Query Without<T>() where T : class, IComponent {
+        public Query Without<T>() where T : IComponent {
             if (_withoutCount == MaxClauses)
                 throw new InvalidOperationException($"A query takes at most {MaxClauses} Without clauses.");
 
             var next = this;
-            next._without[next._withoutCount++] = _pool.Store<T>();
+            next._without[next._withoutCount++] = _pool.AnyStore<T>();
             return next;
         }
 
@@ -57,7 +57,9 @@ namespace Capsicum {
         /// <summary>Returns an allocation-free enumerator over the matching entities.</summary>
         public Enumerator GetEnumerator() => new Enumerator(this);
 
-        private bool Matches(int index) {
+        internal Guard CreateGuard() => new Guard(this);
+
+        internal bool Matches(int index) {
             if (!_pool.IsListed(index)) return false;
             for (var i = 0; i < _withCount; i++) {
                 if (!_with[i].Has(index)) return false;
@@ -80,33 +82,62 @@ namespace Capsicum {
             private int _element;
         }
 
+        /// <summary>
+        /// The checks of one walk over a query's matches: a read of every type it names when the walk starts, and a throw on any later add or remove in those stores.
+        /// </summary>
+        internal struct Guard {
+            private readonly Query _query;
+            private VersionSet _versions;
+
+            internal Guard(Query query) {
+                _query = query;
+                _versions = default;
+                var checker = query._pool.AccessChecker;
+                for (var i = 0; i < query._withCount; i++) {
+                    checker?.Read(query._with[i].TypeId);
+                    _versions[i] = query._with[i].Version;
+                }
+
+                for (var i = 0; i < query._withoutCount; i++) {
+                    checker?.Read(query._without[i].TypeId);
+                    _versions[MaxClauses + i] = query._without[i].Version;
+                }
+            }
+
+            internal void ThrowIfChanged() {
+                for (var i = 0; i < _query._withCount; i++) {
+                    if (_query._with[i].Version != _versions[i]) ThrowChanged(_query._with[i].ComponentType.Name);
+                }
+
+                for (var i = 0; i < _query._withoutCount; i++) {
+                    if (_query._without[i].Version != _versions[MaxClauses + i]) ThrowChanged(_query._without[i].ComponentType.Name);
+                }
+            }
+
+            internal static void ThrowChanged(string what) =>
+                throw new InvalidOperationException(
+                    $"The {what} store changed during query enumeration; collect matches with Pool.QueryInto before changing them.");
+        }
+
         /// <summary>Enumerates the entities matched by a <see cref="Query"/>.</summary>
         public struct Enumerator {
             private Query _query;
-            private VersionSet _versions;
+            private Guard _guard;
             private readonly ComponentStore _driver;
             private readonly int _slotVersion;
             private int _position;
 
             internal Enumerator(Query query) {
                 _query = query;
-                _versions = default;
+                _guard = new Guard(query);
                 _driver = null;
                 _slotVersion = query._pool.SlotVersion;
                 _position = 0;
                 Current = null;
 
-                var checker = query._pool.AccessChecker;
                 for (var i = 0; i < query._withCount; i++) {
                     var store = query._with[i];
-                    checker?.Read(store.TypeId);
-                    _versions[i] = store.Version;
                     if (_driver == null || store.Count < _driver.Count) _driver = store;
-                }
-
-                for (var i = 0; i < query._withoutCount; i++) {
-                    checker?.Read(query._without[i].TypeId);
-                    _versions[MaxClauses + i] = query._without[i].Version;
                 }
 
                 if (_driver != null) _position = -1;
@@ -118,7 +149,8 @@ namespace Capsicum {
             /// <summary>Advances to the next matching entity.</summary>
             /// <exception cref="InvalidOperationException">A store or the pool changed shape since enumeration began.</exception>
             public bool MoveNext() {
-                ThrowIfChanged();
+                _guard.ThrowIfChanged();
+                if (_driver == null && _query._pool.SlotVersion != _slotVersion) Guard.ThrowChanged("entity");
                 var pool = _query._pool;
 
                 if (_driver != null) {
@@ -142,22 +174,6 @@ namespace Capsicum {
                 Current = null;
                 return false;
             }
-
-            private void ThrowIfChanged() {
-                for (var i = 0; i < _query._withCount; i++) {
-                    if (_query._with[i].Version != _versions[i]) ThrowChanged(_query._with[i].ComponentType.Name);
-                }
-
-                for (var i = 0; i < _query._withoutCount; i++) {
-                    if (_query._without[i].Version != _versions[MaxClauses + i]) ThrowChanged(_query._without[i].ComponentType.Name);
-                }
-
-                if (_driver == null && _query._pool.SlotVersion != _slotVersion) ThrowChanged("entity");
-            }
-
-            private static void ThrowChanged(string what) =>
-                throw new InvalidOperationException(
-                    $"The {what} store changed during query enumeration; collect matches with Pool.QueryInto before changing them.");
         }
     }
 }

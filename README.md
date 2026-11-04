@@ -24,7 +24,8 @@ pauses matter.
 
 - **O(1) component access.** Each `Pool` keeps one sparse-set store per component type. Get, has, add and remove are array lookups.
 - **Allocation-free queries.** `pool.Query().With<A>().Without<B>()` is a struct with a struct enumerator. It walks the smallest store it requires.
-- **Deterministic ordering when you need it.** `Pool.QueryInto` fills a reused list sorted by entity index.
+- **Struct components with `ref` access.** A struct component lives inline in its store; `entity.Ref<T>()` changes it in place and `entity.Read<T>()` reads it without a copy. Class and struct components mix in one entity and one query.
+- **Deterministic ordering when you need it.** An `EntityOrder` walks entities by a key component (a spawn serial) without sorting per walk; `Pool.QueryInto` fills a reused list sorted by entity index.
 - **Generational handles.** An `EntityHandle` names a slot plus the generation it was created on, so a stale handle never resolves to the slot's new occupant.
 - **Safe iteration.** Adding or removing a component type a query depends on while it runs throws, instead of skipping or repeating entities.
 - **Typed events.** Each component type has its own `Added`, `Removed` and `Replaced` events, with no per-entity subscriptions.
@@ -122,6 +123,50 @@ void Tick(Pool pool) {
 
 Changing a store the running query names, or creating or releasing entities during a query with no
 `With` clause, throws `InvalidOperationException`. Changing unrelated component types is allowed.
+
+### Struct components
+
+```csharp
+public struct Health : IComponent { public int Points; }
+
+var goblin = pool.CreateEntity().Add(new Health { Points = 30 });
+
+goblin.Ref<Health>().Points -= 12;              // in place, no copy
+int left = goblin.Read<Health>().Points;        // ref readonly
+goblin.Replace(new Health { Points = 50 });     // raises Replaced
+goblin.Remove<Health>();
+
+var store = pool.StructComponents<Health>();
+store.Added += (Entity e, in Health h) => Console.WriteLine($"{e} has {h.Points}");
+```
+
+A `ref` is valid until the next add or remove of that component type, which may move the store's array. Queries take
+struct and class components alike: `pool.Query().With<Health>().With<Position>()`.
+
+With a `SystemAccessChecker`, `Ref<T>` needs `T` in both the system's reads and writes, and `Read<T>` needs it in its reads.
+
+### Ordered iteration
+
+A struct component that implements `IOrderKey` can order the entities that hold it:
+
+```csharp
+public readonly struct SpawnSerial(long value) : IComponent, IOrderKey {
+    public long OrderKey { get; } = value;
+}
+
+var bySerial = pool.OrderBy<SpawnSerial>();          // one per key type, kept in step from now on
+foreach (var entity in bySerial) { /* ascending serial */ }
+foreach (var entity in bySerial.Where(pool.Query().With<Health>())) { /* matches, in serial order */ }
+
+using (bySerial.BeginBulkLoad()) {                  // a restore: append unsorted, sort once at the end
+    foreach (var saved in records) pool.CreateEntity().Add(new SpawnSerial(saved.Serial));
+}
+```
+
+The highest key so far appends; any other add, and a `Replace` that changes the key, is placed by binary search. A
+remove keeps the order of the rest. Keys are unique, and a duplicate is refused before the component is stored, so
+the walk is a pure function of the keys. Walking skips entities the pool doesn't list, and changing the order or the
+pool's entities while walking throws.
 
 ### Handles
 
@@ -259,7 +304,8 @@ not for durable saves that must survive refactoring.
 | Type lookup | A static generic cache (`ComponentType<T>.Id`) indexes the pool's store array, with no dictionary on the hot path. |
 | Identity | `EntityHandle` = slot index + generation. Index 0 is never issued. |
 | Hashing | `Entity` hashes by reference. `EntityHandle` uses a fixed combination of index and generation, never a per-process seed. |
-| Ordering | Stores iterate in insertion/removal order. `QueryInto` and `Pool` enumeration are in handle index order. |
+| Ordering | Stores iterate in insertion/removal order. `QueryInto` and `Pool` enumeration are in handle index order. An `EntityOrder` is in key order. |
+| Struct storage | A struct store keeps components in a dense `T[]`; `ref` access points into it. Class and struct stores sit side by side. |
 | Systems | An explicit ordered list; declarations are validated, never used to reorder. No threading. |
 | Events | One fixed-capacity buffer per event type, cleared by the host each run. Overflow is a counted refusal. |
 | Threading | A pool isn't thread-safe. Use it from one thread, or put your own synchronisation around it. |

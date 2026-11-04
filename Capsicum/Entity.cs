@@ -135,6 +135,64 @@ namespace Capsicum {
             return this;
         }
 
+        /// <summary>Adds the struct component <paramref name="component"/>, stored inline in its store.</summary>
+        /// <exception cref="ComponentAlreadyRegisteredException">The entity already has a <typeparamref name="T"/>.</exception>
+        /// <exception cref="InvalidOperationException">The entity has been released.</exception>
+        /// <exception cref="ArgumentException">An order keyed by <typeparamref name="T"/> already holds its key.</exception>
+        /// <returns>This entity for further chaining</returns>
+        public Entity Add<T>(in T component) where T : struct, IComponent {
+            ThrowIfReleased();
+            Pool.CheckWrite<T>();
+            Pool.StructStore<T>().Add(this, component, notify: true);
+            return this;
+        }
+
+        /// <summary>
+        /// The entity's <typeparamref name="T"/>, by reference, to read and change in place. It is valid until the next add or remove of a <typeparamref name="T"/> on any entity.
+        /// Changing an <see cref="IOrderKey"/> through it does not move the entity in its order; use <see cref="Replace{T}"/> for that.
+        /// </summary>
+        /// <exception cref="ComponentNotRegisteredException">The entity has no <typeparamref name="T"/>.</exception>
+        public ref T Ref<T>() where T : struct, IComponent {
+            Pool.AccessChecker?.Read(ComponentType<T>.Id);
+            Pool.CheckWrite<T>();
+            return ref StructSlot<T>();
+        }
+
+        /// <summary>The entity's <typeparamref name="T"/>, by read-only reference; valid until the next add or remove of a <typeparamref name="T"/> on any entity.</summary>
+        /// <exception cref="ComponentNotRegisteredException">The entity has no <typeparamref name="T"/>.</exception>
+        public ref readonly T Read<T>() where T : struct, IComponent {
+            Pool.AccessChecker?.Read(ComponentType<T>.Id);
+            return ref StructSlot<T>();
+        }
+
+        /// <summary>Swaps the entity's <typeparamref name="T"/> for <paramref name="component"/>, raising <c>Replaced</c> and moving the entity in an order its key changed.</summary>
+        /// <exception cref="ComponentNotRegisteredException">The entity has no <typeparamref name="T"/>.</exception>
+        /// <exception cref="ArgumentException">An order keyed by <typeparamref name="T"/> already holds the new key.</exception>
+        public Entity Replace<T>(in T component) where T : struct, IComponent {
+            Pool.CheckWrite<T>();
+            if (!IsEnabled || !Pool.Contains<T>(Handle.Index))
+                throw new ComponentNotRegisteredException(this, $"Component '{typeof(T).Name}' is not registered");
+            Pool.StructStore<T>().Replace(this, component);
+            return this;
+        }
+
+        /// <summary>Removes the entity's struct component <typeparamref name="T"/>.</summary>
+        /// <exception cref="ComponentNotRegisteredException">The entity has no <typeparamref name="T"/>.</exception>
+        /// <returns>This entity for further chaining</returns>
+        public Entity Remove<T>() where T : struct, IComponent {
+            Pool.CheckWrite<T>();
+            if (!IsEnabled || !Pool.Contains<T>(Handle.Index))
+                throw new ComponentNotRegisteredException(this, $"Component type '{typeof(T).Name}' is not registered");
+            Pool.StructStore<T>().Remove(this, notify: true);
+            return this;
+        }
+
+        private ref T StructSlot<T>() where T : struct, IComponent {
+            if (!IsEnabled || !Pool.Contains<T>(Handle.Index))
+                throw new ComponentNotRegisteredException(this, $"Component of type '{typeof(T).Name}' was not registered");
+            return ref Pool.StructStore<T>().Ref(Handle.Index);
+        }
+
         /// <summary>
         /// Release this entity and its components; its slot is reused by a later entity.
         /// </summary>
