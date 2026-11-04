@@ -26,6 +26,7 @@ namespace Capsicum {
         private bool[] _listed;
         private int _nextIndex;
         private ComponentStore[] _stores = Array.Empty<ComponentStore>();
+        private EntityOrder[] _orders = Array.Empty<EntityOrder>();
 
         /// <summary>Raised after an entity is created, before any initial components are added.</summary>
         public event EventHandler<PoolChanged> OnEntityCreated;
@@ -145,6 +146,45 @@ namespace Capsicum {
             return (ComponentStore<T>)(_stores[id] ??= new ComponentStore<T>());
         }
 
+        /// <summary>Returns this pool's store for the struct component <typeparamref name="T"/>, creating it on first use.</summary>
+        public StructComponentStore<T> StructComponents<T>() where T : struct, IComponent {
+            AccessChecker?.Read(ComponentType<T>.Id);
+            return StructStore<T>();
+        }
+
+        internal StructComponentStore<T> StructStore<T>() where T : struct, IComponent {
+            var id = ComponentType<T>.Id;
+            EnsureStoreCapacity(id);
+            return (StructComponentStore<T>)(_stores[id] ??= new StructComponentStore<T>());
+        }
+
+        /// <summary>The store for <typeparamref name="T"/> of either kind, creating it on first use; a query names stores this way.</summary>
+        internal ComponentStore AnyStore<T>() where T : IComponent {
+            var id = ComponentType<T>.Id;
+            EnsureStoreCapacity(id);
+            return _stores[id] ??= NewStore(typeof(T));
+        }
+
+        /// <summary>
+        /// The order of the entities holding the struct component <typeparamref name="T"/>, by its <see cref="IOrderKey.OrderKey"/>, created on first use and kept in step
+        /// with the component from then on. Entities that already hold one when it is created are sorted into it once.
+        /// </summary>
+        public EntityOrder OrderBy<T>() where T : struct, IComponent, IOrderKey {
+            var id = ComponentType<T>.Id;
+            if (id < _orders.Length && _orders[id] is { } existing) return existing;
+            if (id >= _orders.Length) Array.Resize(ref _orders, Math.Max(id + 1, _orders.Length * 2));
+            var order = new EntityOrder(this);
+            var store = StructStore<T>();
+            using (order.BeginBulkLoad()) {
+                for (var position = 0; position < store.Count; position++) {
+                    var index = store.IndexAt(position);
+                    order.Insert(index, store.Ref(index).OrderKey);
+                }
+            }
+            store.Observe(new EntityOrderObserver<T>(order));
+            return _orders[id] = order;
+        }
+
         /// <summary>Starts a query over this pool's enumerated entities.</summary>
         public Query Query() => new Query(this);
 
@@ -245,9 +285,12 @@ namespace Capsicum {
             var id = ComponentType.IdOf(type);
             AccessChecker?.Write(id);
             EnsureStoreCapacity(id);
-            var store = _stores[id] ??= (ComponentStore)Activator.CreateInstance(typeof(ComponentStore<>).MakeGenericType(type));
+            var store = _stores[id] ??= NewStore(type);
             store.AddUntyped(entity, component, notify);
         }
+
+        private static ComponentStore NewStore(Type type) =>
+            (ComponentStore)Activator.CreateInstance((type.IsValueType ? typeof(StructComponentStore<>) : typeof(ComponentStore<>)).MakeGenericType(type));
 
         private void List(int index) {
             if (_listed[index]) return;

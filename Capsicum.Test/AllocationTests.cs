@@ -176,5 +176,69 @@ namespace Capsicum.Test {
             Assert.That(observer.Finished, Is.EqualTo(2 * 2 * Iterations));
             Assert.That(bytes, Is.EqualTo(0));
         }
+    
+        private (Pool Pool, Entity[] Entities) StructPool() {
+            var pool = new Pool();
+            var order = pool.OrderBy<Serial>();
+            var entities = new Entity[EntityCount];
+            for (var i = 0; i < EntityCount; i++) {
+                entities[i] = pool.CreateEntity().Add(new Serial(EntityCount - i)).Add(new Health(i));
+                if (i % 2 == 0) entities[i].Add(new Mood());
+            }
+
+            Assert.That(order.Count, Is.EqualTo(EntityCount));
+            return (pool, entities);
+        }
+
+        [Test]
+        public void AStructQueryWalkWithRefChangesAllocatesNothing() {
+            var (pool, _) = StructPool();
+            var visited = 0;
+            var bytes = AllocatedBy(() => {
+                for (var n = 0; n < Iterations; n++) {
+                    foreach (var entity in pool.Query().With<Health>().Without<Mood>()) {
+                        entity.Ref<Health>().Points++;
+                        visited++;
+                    }
+                }
+            });
+
+            Assert.That(visited, Is.EqualTo(2 * Iterations * EntityCount / 2));
+            Assert.That(bytes, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void AnOrderedWalkAllocatesNothing() {
+            var (pool, _) = StructPool();
+            var order = pool.OrderBy<Serial>();
+            long sum = 0;
+            var bytes = AllocatedBy(() => {
+                for (var n = 0; n < Iterations; n++) {
+                    foreach (var entity in order) sum += entity.Read<Serial>().Value;
+                    foreach (var entity in order.Where(pool.Query().With<Mood>())) sum += entity.Read<Health>().Points;
+                }
+            });
+
+            Assert.That(sum, Is.GreaterThan(0));
+            Assert.That(bytes, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void StructAndOrderChurnAllocatesNothingOnceGrown() {
+            var (pool, entities) = StructPool();
+            var bytes = AllocatedBy(() => {
+                for (var n = 0; n < Iterations; n++) {
+                    foreach (var entity in entities) {
+                        var serial = entity.Read<Serial>();
+                        entity.Remove<Serial>();
+                        entity.Add(serial);
+                        entity.Replace(new Health(n));
+                    }
+                }
+            });
+
+            Assert.That(pool.OrderBy<Serial>().Count, Is.EqualTo(EntityCount));
+            Assert.That(bytes, Is.EqualTo(0));
+        }
     }
 }
