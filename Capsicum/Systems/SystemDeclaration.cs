@@ -11,14 +11,15 @@ namespace Capsicum.Systems;
 /// <remarks>
 /// Reads and writes are checked separately, so a system that updates a type in place lists it in both.
 /// <see cref="SystemSchedule{TContext}"/> validates every read against the order it is given, and a
-/// <see cref="SystemAccessChecker"/> holds a running system to its declaration.
+/// <see cref="SystemAccessChecker"/> holds a running system to its declaration. An <see cref="Unchecked"/> declaration names no access and is not held to any.
 /// </remarks>
 public sealed class SystemDeclaration {
     private readonly bool[] _mayRead;
     private readonly bool[] _mayWrite;
 
-    private SystemDeclaration(string name, ImmutableArray<Type> reads, ImmutableArray<Type> writes) {
+    private SystemDeclaration(string name, ImmutableArray<Type> reads, ImmutableArray<Type> writes, bool isChecked = true) {
         Name = name;
+        IsChecked = isChecked;
         Reads = reads;
         Writes = writes;
         _mayRead = Table(reads);
@@ -27,6 +28,12 @@ public sealed class SystemDeclaration {
 
     /// <summary>Stable name, unique within a schedule; observers and metrics key on it.</summary>
     public string Name { get; }
+
+    /// <summary>
+    /// False for an <see cref="Unchecked"/> entry: a <see cref="SystemAccessChecker"/> checks nothing while it runs, and it adds no
+    /// findings to its schedule.
+    /// </summary>
+    public bool IsChecked { get; }
 
     /// <summary>Types the system reads.</summary>
     public ImmutableArray<Type> Reads { get; }
@@ -47,6 +54,16 @@ public sealed class SystemDeclaration {
         RefuseRepeats(writeList, name, "writes");
 
         return new SystemDeclaration(name, readList, writeList);
+    }
+
+    /// <summary>
+    /// Declares an entry whose access is not known, such as code that is not a system yet but runs in a schedule's order. Its reads and writes are empty,
+    /// and a <see cref="SystemAccessChecker"/> checks nothing while it runs; a schedule it runs is checked against that schedule's own systems.
+    /// </summary>
+    /// <exception cref="ArgumentException">The name is blank.</exception>
+    public static SystemDeclaration Unchecked(string name) {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        return new SystemDeclaration(name, [], [], isChecked: false);
     }
 
     internal bool MayRead(int typeId) => typeId < _mayRead.Length && _mayRead[typeId];
