@@ -86,6 +86,31 @@ namespace Capsicum.Test {
         }
 
         [Test]
+        public void RunAllocateWriteReadAndFreeAllocateNothingOnceWarm() {
+            var runs = new RunStore<int>(new RunStoreOptions(runLength: 8, capacity: EntityCount));
+            var handles = new RunHandle[EntityCount];
+            long sum = 0;
+            var bytes = AllocatedBy(() => {
+                for (var n = 0; n < Iterations; n++) {
+                    for (var i = 0; i < handles.Length; i++) {
+                        runs.TryAllocate(1 + i % 8, out handles[i]);
+                        var run = runs.Get(handles[i]);
+                        for (var e = 0; e < run.Length; e++) run[e] = n + e;
+                    }
+
+                    foreach (var handle in handles) {
+                        foreach (var value in runs.Get(handle)) sum += value;
+                        runs.Free(handle);
+                    }
+                }
+            });
+
+            Assert.That(sum, Is.GreaterThan(0));
+            Assert.That(runs.Count, Is.EqualTo(0));
+            Assert.That(bytes, Is.EqualTo(0));
+        }
+
+        [Test]
         public void ComponentLookupsAllocateNothing() {
             var found = 0;
             var bytes = AllocatedBy(() => {
