@@ -25,6 +25,7 @@ pauses matter.
 - **O(1) component access.** Each `Pool` keeps one sparse-set store per component type. Get, has, add and remove are array lookups.
 - **Allocation-free queries.** `pool.Query().With<A>().Without<B>()` is a struct with a struct enumerator. It walks the smallest store it requires.
 - **Struct components with `ref` access.** A struct component lives inline in its store; `entity.Ref<T>()` changes it in place and `entity.Read<T>()` reads it without a copy. Class and struct components mix in one entity and one query.
+- **Pooled side store for variable-size data.** A `RunStore<T>` hands out runs of elements reached by a `RunHandle` kept in a struct component, read and written as a `Span<T>`, with a fixed capacity and no growth once warm.
 - **Deterministic ordering when you need it.** An `EntityOrder` walks entities by a key component (a spawn serial) without sorting per walk; `Pool.QueryInto` fills a reused list sorted by entity index.
 - **Generational handles.** An `EntityHandle` names a slot plus the generation it was created on, so a stale handle never resolves to the slot's new occupant.
 - **Safe iteration.** Adding or removing a component type a query depends on while it runs throws, instead of skipping or repeating entities.
@@ -145,6 +146,33 @@ struct and class components alike: `pool.Query().With<Health>().With<Position>()
 
 With a `SystemAccessChecker`, `Ref<T>` needs `T` in both the system's reads and writes, and `Read<T>` needs it in its reads.
 Walking an order reads its key component, so a system that walks one declares the key too.
+
+### Run stores
+
+A struct component can't hold an array, because copies of the struct would share it. Data whose size varies by entity,
+such as a table sized by the entity's type, goes in a `RunStore<T>` instead, and the component keeps the `RunHandle`:
+
+```csharp
+public struct Cooldowns : IComponent { public RunHandle Run; }
+
+var runs = new RunStore<int>(new RunStoreOptions(runLength: 16, capacity: 4096));
+
+if (!runs.TryAllocate(type.SpecialCount, out var run)) return SpawnRefused.Full;   // full: nothing changed
+var monster = pool.CreateEntity().Add(new Cooldowns { Run = run });
+
+Span<int> cooldowns = runs.Get(monster.Read<Cooldowns>().Run);                      // read and write in place
+cooldowns[0] = 3;
+
+runs.Free(monster.Read<Cooldowns>().Run);                                           // on despawn; clears the run
+pool.RemoveEntity(monster);
+```
+
+Every run reserves `RunLength` elements, and a run of length zero is `RunHandle.None`, which takes no slot. A new run
+reads as zeroes, and freeing clears it, so a reused slot never shows an earlier owner's data. Freed slots are reused
+before the store grows, so once the live count has peaked nothing allocates. A full store refuses without changing
+anything; check `Available` before a change that needs several runs. A freed handle goes stale and `Get` or `Free`
+on it throws. The store isn't tied to a pool, so whoever removes the owning component frees the run. Never save a
+handle: save the elements with the owning component, and allocate them again on restore.
 
 ### Ordered iteration
 
@@ -309,6 +337,7 @@ not for durable saves that must survive refactoring.
 | Ordering | Stores iterate in insertion/removal order. `QueryInto` and `Pool` enumeration are in handle index order. An `EntityOrder` is in key order. |
 | Struct storage | A struct store keeps components in a dense `T[]`; `ref` access points into it. Class and struct stores sit side by side. |
 | Systems | An explicit ordered list; declarations are validated, never used to reorder. No threading. |
+| Run stores | One `T[]` of `Capacity` slots of `RunLength` elements, grown by doubling; a free stack reuses slots; a handle is slot + generation + length. |
 | Events | One fixed-capacity buffer per event type, cleared by the host each run. Overflow is a counted refusal. |
 | Threading | A pool isn't thread-safe. Use it from one thread, or put your own synchronisation around it. |
 
