@@ -294,6 +294,9 @@ adding, removing or replacing one, releasing an entity, and emitting or clearing
 out by a read can still be mutated, which the checker can't see. Access outside a running system isn't checked. A schedule run from inside a system checks the inner systems, and the
 outer declaration applies again when it returns.
 
+Code that runs in a schedule's order but isn't a system yet can be listed under `SystemDeclaration.Unchecked(name)`:
+the entry names no access, adds no findings, and nothing it touches is checked, though a schedule it runs is.
+
 ### Event buffers
 
 ```csharp

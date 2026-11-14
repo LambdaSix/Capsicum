@@ -20,6 +20,15 @@ public class SystemAccessCheckerTests {
         }
     }
 
+    private sealed class Adapter(string name, Action<Entity> body) : ISystem<Entity> {
+        public SystemDeclaration Declaration { get; } = SystemDeclaration.Unchecked(name);
+
+        public int Run(in Entity context) {
+            body(context);
+            return 1;
+        }
+    }
+
     private Pool _pool = null!;
     private Entity _entity = null!;
     private SystemAccessChecker _checker = null!;
@@ -157,6 +166,33 @@ public class SystemAccessCheckerTests {
 
         Assert.DoesNotThrow(() => _entity.GetComponent<FakeComponent>());
         Assert.DoesNotThrow(() => _entity.AddComponent(new OtherComponent()));
+    }
+
+    [Test]
+    public void AnUncheckedEntryIsNotCheckedButTheSystemsAfterItAre() {
+        var schedule = new SystemSchedule<Entity>([
+            new Adapter("adapter", entity => entity.ReplaceComponent(new FakeComponent())),
+            new Probe("probe", [], [], entity => entity.GetComponent<FakeComponent>())
+        ], checker: _checker);
+
+        var thrown = Assert.Throws<UndeclaredAccessException>(() => schedule.Run(_entity));
+
+        Assert.That(thrown!.System.Name, Is.EqualTo("probe"));
+        Assert.That(thrown.IsWrite, Is.False);
+    }
+
+    [Test]
+    public void ASystemAnUncheckedEntryRunsIsHeldToItsOwnDeclaration() {
+        var inner = new SystemSchedule<Entity>([new Probe("inner", [typeof(OtherComponent)], [], entity => entity.GetComponent<FakeComponent>())], checker: _checker);
+        var outer = new SystemSchedule<Entity>([new Adapter("adapter", entity => {
+            entity.GetComponent<FakeComponent>();
+            inner.Run(entity);
+        })], checker: _checker);
+
+        var thrown = Assert.Throws<UndeclaredAccessException>(() => outer.Run(_entity));
+
+        Assert.That(thrown!.System.Name, Is.EqualTo("inner"));
+        Assert.That(thrown.Type, Is.EqualTo(typeof(FakeComponent)));
     }
 
     [Test]
